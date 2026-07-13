@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Attendance Mini App</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: sans-serif;
+            background-color: #f0f2f5;
+            color: #333;
+        }
+        .container {
+            max-width: 400px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        .btn {
+            @apply bg-blue-500 text-white font-bold py-2 px-4 rounded;
+        }
+        .btn-green {
+            @apply bg-green-500 hover:bg-green-700;
+        }
+        .btn-red {
+            @apply bg-red-500 hover:bg-red-700;
+        }
+        .btn-disabled {
+            @apply bg-gray-400 cursor-not-allowed;
+        }
+        .input-field {
+            @apply shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline;
+        }
+        .error-message {
+            @apply text-red-500 text-xs italic mt-2;
+        }
+        .success-message {
+            @apply text-green-500 text-xs italic mt-2;
+        }
+        .badge {
+            @apply inline-block px-2 py-1 rounded-full text-xs font-semibold;
+        }
+        .badge-green {
+            @apply bg-green-200 text-green-800;
+        }
+        .badge-yellow {
+            @apply bg-yellow-200 text-yellow-800;
+        }
+        .badge-red {
+            @apply bg-red-200 text-red-800;
+        }
+    </style>
+</head>
+<body>
+    <div id="app" class="container mt-8">
+        <!-- Screens will be injected here by JavaScript -->
+    </div>
+
+    <script>
+        const API_BASE_URL = "https://face-attendance-api.facetime.workers.dev"; // TODO: แก้เป็น URL ของ Cloudflare Worker ที่ deploy จริง ถ้าไม่ตรงกับนี้
+
+        const app = document.getElementById("app");
+
+        function showScreen(screenId, data = {}) {
+            app.innerHTML = ""; // Clear current screen
+            let screenHtml = "";
+
+            switch (screenId) {
+                case "loading":
+                    screenHtml = `
+                        <div class="text-center py-8">
+                            <h2 class="text-xl font-bold">กำลังโหลด...</h2>
+                            <p class="text-gray-600">กรุณารอสักครู่</p>
+                        </div>
+                    `;
+                    break;
+                case "not-telegram":
+                    screenHtml = `
+                        <div class="text-center py-8">
+                            <h2 class="text-xl font-bold text-red-500">ข้อผิดพลาด</h2>
+                            <p class="text-gray-600">แอปนี้ต้องเปิดผ่าน Telegram Mini App เท่านั้น</p>
+                        </div>
+                    `;
+                    break;
+                case "register":
+                    screenHtml = `
+                        <h2 class="text-2xl font-bold mb-4">ลงทะเบียนพนักงาน</h2>
+                        <p class="mb-4">กรุณากรอกชื่อ-นามสกุลเพื่อลงทะเบียน</p>
+                        <input type="text" id="nameInput" placeholder="ชื่อ-นามสกุล" class="input-field mb-4">
+                        <button id="registerBtn" class="btn btn-green w-full">ลงทะเบียน</button>
+                        <p id="registerError" class="error-message"></p>
+                    `;
+                    break;
+                case "main":
+                    screenHtml = `
+                        <h2 class="text-2xl font-bold mb-4">สวัสดี, ${data.name}</h2>
+                        <p class="text-gray-600 mb-4">สถานะวันนี้: <span id="todayStatusBadge" class="badge"></span></p>
+                        <div class="flex flex-col space-y-4">
+                            <button id="checkInBtn" class="btn btn-green w-full ${data.today_status === 'not_checked_in' ? '' : 'btn-disabled'}" ${data.today_status === 'not_checked_in' ? '' : 'disabled'}>ลงชื่อเข้างาน</button>
+                            <button id="checkOutBtn" class="btn btn-red w-full ${data.today_status === 'checked_in' ? '' : 'btn-disabled'}" ${data.today_status === 'checked_in' ? '' : 'disabled'}>ลงชื่อออกงาน</button>
+                            <button id="leaveBtn" class="btn bg-yellow-500 hover:bg-yellow-700 w-full">แจ้งลา</button>
+                            <button id="historyBtn" class="btn bg-gray-500 hover:bg-gray-700 w-full">ดูประวัติย้อนหลัง</button>
+                        </div>
+                    `;
+                    break;
+                case "camera":
+                    // ใช้ native file input (capture="user") แทน getUserMedia + video/canvas เดิม
+                    // เพราะ getUserMedia พังบ่อยบน Android 13 / Telegram บางเวอร์ชัน
+                    screenHtml = `
+                        <h2 class="text-2xl font-bold mb-4">${data.type === 'checkin' ? 'ถ่ายรูปลงชื่อเข้างาน' : 'ถ่ายรูปลงชื่อออกงาน'}</h2>
+                        <div id="photoPreviewWrap" class="w-full h-64 bg-gray-200 rounded-lg mb-4 flex items-center justify-center overflow-hidden">
+                            <img id="photoPreview" class="hidden w-full h-full object-cover" alt="รูปที่ถ่าย">
+                            <span id="photoPlaceholder" class="text-gray-500">ยังไม่ได้ถ่ายรูป</span>
+                        </div>
+                        <input type="file" accept="image/*" capture="user" id="photoInput" class="hidden">
+                        <p id="gpsStatus" class="text-gray-600 mb-4"><span class="badge badge-yellow">กำลังค้นหา GPS...</span></p>
+                        <p id="cameraError" class="error-message"></p>
+                        <button id="takePhotoBtn" class="btn btn-green w-full mb-2">ถ่ายรูป</button>
+                        <button id="submitPhotoBtn" class="btn btn-green w-full mb-2 btn-disabled" disabled>ยืนยันและส่ง</button>
+                        <button id="cancelCameraBtn" class="btn bg-gray-500 hover:bg-gray-700 w-full">ยกเลิก</button>
+                    `;
+                    break;
+                case "summary":
+                    screenHtml = `
+                        <h2 class="text-2xl font-bold mb-4">สรุปผลการลงชื่อ</h2>
+                        <p class="mb-2">ชื่อ: <span class="font-semibold">${data.name || ''}</span></p>
+                        ${data.status ? `<p class="mb-2">สถานะ: <span class="font-semibold">${data.status}</span></p>` : ''}
+                        ${data.time ? `<p class="mb-2">เวลาเข้างาน: <span class="font-semibold">${data.time} น.</span></p>` : ''}
+                        ${data.check_in_time ? `<p class="mb-2">เข้างาน: <span class="font-semibold">${data.check_in_time} น.</span></p>` : ''}
+                        ${data.check_out_time ? `<p class="mb-2">ออกงาน: <span class="font-semibold">${data.check_out_time} น.</span></p>` : ''}
+                        ${typeof data.work_hours === 'number' ? `<p class="mb-2">ชั่วโมงทำงาน: <span class="font-semibold">${data.work_hours.toFixed(2)} ชม.</span></p>` : ''}
+                        <p class="mb-2">พื้นที่: <span class="font-semibold">${data.out_of_area ? 'นอกพื้นที่' : 'ในพื้นที่'}</span>${typeof data.distance_m === 'number' ? ` (${data.distance_m} ม.)` : ''}</p>
+                        ${data.warning ? `<p class="error-message">${data.warning}</p>` : ''}
+                        <button id="backToMainBtn" class="btn btn-green w-full mt-4">กลับหน้าหลัก</button>
+                    `;
+                    break;
+                case "history":
+                    screenHtml = `
+                        <h2 class="text-2xl font-bold mb-4">ประวัติการเข้างาน</h2>
+                        <div class="flex space-x-2 mb-4">
+                            <select id="historyMonth" class="input-field w-1/2"></select>
+                            <select id="historyYear" class="input-field w-1/2"></select>
+                        </div>
+                        <div id="historyList" class="space-y-2"></div>
+                        <button id="backToMainBtn" class="btn bg-gray-500 hover:bg-gray-700 w-full mt-4">กลับหน้าหลัก</button>
+                    `;
+                    break;
+                case "leave-form":
+                    screenHtml = `
+                        <h2 class="text-2xl font-bold mb-4">แจ้งลา</h2>
+                        <div class="mb-4">
+                            <label for="leaveType" class="block text-gray-700 text-sm font-bold mb-2">ประเภทการลา:</label>
+                            <select id="leaveType" class="input-field">
+                                <option value="sick">ลาป่วย</option>
+                                <option value="personal">ลากิจ</option>
+                                <option value="business">ลาพักร้อน</option>
+                            </select>
+                        </div>
+                        <div class="mb-4">
+                            <label for="startDate" class="block text-gray-700 text-sm font-bold mb-2">วันที่เริ่มต้น:</label>
+                            <input type="date" id="startDate" class="input-field">
+                        </div>
+                        <div class="mb-4">
+                            <label for="endDate" class="block text-gray-700 text-sm font-bold mb-2">วันที่สิ้นสุด:</label>
+                            <input type="date" id="endDate" class="input-field">
+                        </div>
+                        <div class="mb-4">
+                            <label for="reason" class="block text-gray-700 text-sm font-bold mb-2">เหตุผล:</label>
+                            <textarea id="reason" class="input-field" rows="3"></textarea>
+                        </div>
+                        <button id="submitLeaveBtn" class="btn btn-green w-full">ส่งคำขอลา</button>
+                        <p id="leaveError" class="error-message"></p>
+                        <button id="cancelLeaveBtn" class="btn bg-gray-500 hover:bg-gray-700 w-full mt-2">ยกเลิก</button>
+                    `;
+                    break;
+            }
+            app.innerHTML = screenHtml;
+            Telegram.WebApp.ready();
+            Telegram.WebApp.expand();
+            attachEventListeners(screenId, data);
+        }
+
+        function attachEventListeners(screenId, data) {
+            switch (screenId) {
+                case "register":
+                    document.getElementById("registerBtn").addEventListener("click", handleRegister);
+                    break;
+                case "main":
+                    document.getElementById("checkInBtn").addEventListener("click", () => showScreen("camera", { type: "checkin", name: data.name }));
+                    document.getElementById("checkOutBtn").addEventListener("click", () => showScreen("camera", { type: "checkout", name: data.name }));
+                    document.getElementById("leaveBtn").addEventListener("click", () => showScreen("leave-form"));
+                    document.getElementById("historyBtn").addEventListener("click", () => showScreen("history"));
+                    updateTodayStatusBadge(data.today_status);
+                    break;
+                case "camera":
+                    setupCamera(data.type);
+                    document.getElementById("cancelCameraBtn").addEventListener("click", () => checkUserStatus());
+                    break;
+                case "summary":
+                    document.getElementById("backToMainBtn").addEventListener("click", () => checkUserStatus());
+                    break;
+                case "history":
+                    setupHistory();
+                    document.getElementById("backToMainBtn").addEventListener("click", () => checkUserStatus());
+                    break;
+                case "leave-form":
+                    document.getElementById("submitLeaveBtn").addEventListener("click", handleSubmitLeave);
+                    document.getElementById("cancelLeaveBtn").addEventListener("click", () => checkUserStatus());
+                    break;
+            }
+        }
+
+        function updateTodayStatusBadge(status) {
+            const badge = document.getElementById("todayStatusBadge");
+            badge.classList.remove("badge-green", "badge-yellow", "badge-red");
+            switch (status) {
+                case "not_checked_in":
+                    badge.textContent = "ยังไม่ลงชื่อเข้างาน";
+                    badge.classList.add("badge-red");
+                    break;
+                case "checked_in":
+                    badge.textContent = "ลงชื่อเข้างานแล้ว";
+                    badge.classList.add("badge-yellow");
+                    break;
+                case "checked_out":
+                    badge.textContent = "ลงชื่อครบแล้ววันนี้";
+                    badge.classList.add("badge-green");
+                    break;
+            }
+        }
+
+        async function checkUserStatus() {
+            showScreen("loading");
+            if (!Telegram.WebApp.initDataUnsafe || !Telegram.WebApp.initDataUnsafe.user) {
+                showScreen("not-telegram");
+                return;
+            }
+
+            const telegramUserId = Telegram.WebApp.initDataUnsafe.user.id;
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/me?id=${telegramUserId}`, {
+                    headers: {
+                        "X-Telegram-Init-Data": Telegram.WebApp.initData,
+                    },
+                });
+                const data = await response.json();
+
+                if (data.registered) {
+                    showScreen("main", { name: data.name, today_status: data.today_status });
+                } else {
+                    showScreen("register");
+                }
+            } catch (e) {
+                console.error("Error checking user status:", e);
+                app.innerHTML = `<div class="text-center py-8"><h2 class="text-xl font-bold text-red-500">เกิดข้อผิดพลาด</h2><p class="text-gray-600">ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้: ${e.message}</p></div>`;
+            }
+        }
+
+        async function handleRegister() {
+            const nameInput = document.getElementById("nameInput");
+            const name = nameInput.value.trim();
+            const registerError = document.getElementById("registerError");
+            registerError.textContent = "";
+
+            if (!name) {
+                registerError.textContent = "กรุณากรอกชื่อ-นามสกุล";
+                return;
+            }
+
+            const telegramUserId = Telegram.WebApp.initDataUnsafe.user.id;
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/register`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "X-Telegram-Init-Data": Telegram.WebApp.initData,
+                    },
+                    body: JSON.stringify({ telegram_user_id: telegramUserId, name }),
+                });
+                const data = await response.json();
+
+                if (data.ok) {
+                    checkUserStatus(); // กลับหน้าหลักหลังลงทะเบียนสำเร็จ
+                } else {
+                    registerError.textContent = data.error || "เกิดข้อผิดพลาดในการลงทะเบียน";
+                }
+            } catch (e) {
+                console.error("Error during registration:", e);
+                registerError.textContent = `ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้: ${e.message}`;
+            }
+        }
+
+        // ── ถ่ายรูปด้วย native file input (แทน getUserMedia + video/canvas เดิม) ──
+        let currentActionType = null; // 'checkin' หรือ 'checkout'
+        let capturedPhotoBase64 = null; // base64 ดิบ ไม่มี prefix "data:image/...;base64,"
+
+        function setupCamera(type) {
+            currentActionType = type;
+            capturedPhotoBase64 = null;
+
+            const photoInput = document.getElementById("photoInput");
+            const takePhotoBtn = document.getElementById("takePhotoBtn");
+            const submitPhotoBtn = document.getElementById("submitPhotoBtn");
+
+            takePhotoBtn.addEventListener("click", () => photoInput.click());
+            photoInput.addEventListener("change", handlePhotoSelected);
+            submitPhotoBtn.addEventListener("click", submitAttendance);
+
+            getGPSLocation();
+        }
+
+        function handlePhotoSelected(e) {
+            const cameraError = document.getElementById("cameraError");
+            cameraError.textContent = "";
+
+            const file = e.target.files && e.target.files[0];
+            if (!file) return;
+
+            if (file.size > 8 * 1024 * 1024) {
+                cameraError.textContent = "ไฟล์รูปภาพใหญ่เกินไป กรุณาลองถ่ายใหม่";
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = () => {
+                const dataUrl = reader.result;
+                capturedPhotoBase64 = dataUrl.split(",")[1] || null;
+
+                const preview = document.getElementById("photoPreview");
+                const placeholder = document.getElementById("photoPlaceholder");
+                preview.src = dataUrl;
+                preview.classList.remove("hidden");
+                placeholder.classList.add("hidden");
+
+                const submitBtn = document.getElementById("submitPhotoBtn");
+                submitBtn.disabled = false;
+                submitBtn.classList.remove("btn-disabled");
+            };
+            reader.onerror = () => {
+                cameraError.textContent = "ไม่สามารถอ่านไฟล์รูปภาพได้ กรุณาลองใหม่";
+            };
+            reader.readAsDataURL(file);
+        }
+
+        let currentGpsLat = null;
+        let currentGpsLon = null;
+
+        function getGPSLocation() {
+            const gpsStatus = document.getElementById("gpsStatus");
+            gpsStatus.innerHTML = `<span class="badge badge-yellow">กำลังค้นหา GPS...</span>`;
+
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    currentGpsLat = position.coords.latitude;
+                    currentGpsLon = position.coords.longitude;
+                    gpsStatus.innerHTML = `<span class="badge badge-green">GPS พร้อมใช้งาน</span>`;
+                },
+                (error) => {
+                    console.error("GPS error:", error);
+                    currentGpsLat = null;
+                    currentGpsLon = null;
+                    // backend บังคับต้องมีพิกัด GPS เสมอ จึงไม่ให้ข้ามขั้นตอนนี้ได้เหมือนเดิม
+                    gpsStatus.innerHTML = `<span class="badge badge-red">ไม่พบ GPS (${error.message}) — กรุณาเปิดสัญญาณ GPS แล้วลองใหม่</span>`;
+                },
+                { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+            );
+        }
+
+        async function submitAttendance() {
+            const cameraError = document.getElementById("cameraError");
+            cameraError.textContent = "";
+
+            if (!capturedPhotoBase64) {
+                cameraError.textContent = "กรุณาถ่ายรูปก่อน";
+                return;
+            }
+            if (currentGpsLat == null || currentGpsLon == null) {
+                cameraError.textContent = "ไม่มีพิกัด GPS กรุณาเปิดสัญญาณ GPS แล้วลองใหม่";
+                getGPSLocation();
+                return;
+            }
+
+            const submitBtn = document.getElementById("submitPhotoBtn");
+            submitBtn.disabled = true;
+            submitBtn.textContent = "กำลังส่ง...";
+
+            const telegramUserId = Telegram.WebApp.initDataUnsafe.user.id;
+            const endpoint = currentActionType === "checkin" ? "/api/checkin" : "/api/checkout";
+
+            try {
+                const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "X-Telegram-Init-Data": Telegram.WebApp.initData,
+                    },
+                    body: JSON.stringify({
+                        telegram_user_id: telegramUserId,
+                        photo_base64: capturedPhotoBase64,
+                        gps_lat: currentGpsLat,
+                        gps_lon: currentGpsLon,
+                    }),
+                });
+                const data = await response.json();
+
+                if (data.ok) {
+                    showScreen("summary", data);
+                } else {
+                    alert(data.error || "เกิดข้อผิดพลาดในการลงชื่อ");
+                    checkUserStatus();
+                }
+            } catch (e) {
+                console.error("Error during checkin/checkout:", e);
+                alert(`ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้: ${e.message}`);
+                checkUserStatus();
+            }
+        }
+
+        async function setupHistory() {
+            const historyMonthSelect = document.getElementById("historyMonth");
+            const historyYearSelect = document.getElementById("historyYear");
+            const historyList = document.getElementById("historyList");
+
+            const currentYear = new Date().getFullYear();
+            for (let i = 0; i < 5; i++) { // ย้อนหลัง 5 ปี
+                const year = currentYear - i;
+                const option = document.createElement("option");
+                option.value = year;
+                option.textContent = year;
+                historyYearSelect.appendChild(option);
+            }
+
+            for (let i = 1; i <= 12; i++) {
+                const option = document.createElement("option");
+                option.value = i;
+                option.textContent = new Date(0, i - 1).toLocaleString("th-TH", { month: "long" });
+                historyMonthSelect.appendChild(option);
+            }
+
+            historyYearSelect.value = currentYear;
+            historyMonthSelect.value = new Date().getMonth() + 1;
+
+            const fetchHistory = async () => {
+                historyList.innerHTML = "<p class=\"text-center text-gray-500\">กำลังโหลดประวัติ...</p>";
+                const telegramUserId = Telegram.WebApp.initDataUnsafe.user.id;
+                const year = historyYearSelect.value;
+                const month = historyMonthSelect.value;
+
+                try {
+                    const response = await fetch(`${API_BASE_URL}/api/my-attendance?id=${telegramUserId}&year=${year}&month=${month}`, {
+                        headers: {
+                            "X-Telegram-Init-Data": Telegram.WebApp.initData,
+                        },
+                    });
+                    const data = await response.json();
+
+                    if (data.ok) {
+                        historyList.innerHTML = "";
+
+                        if (data.summary) {
+                            const summaryEl = document.createElement("div");
+                            summaryEl.className = "p-3 border rounded-lg bg-blue-50";
+                            summaryEl.innerHTML = `
+                                <p class="font-semibold">สรุปเดือนนี้</p>
+                                <p>เข้างาน ${data.summary.checkins} วัน (ตรงเวลา ${data.summary.on_time} / สาย ${data.summary.late})</p>
+                                <p>ลา ${data.summary.leave_count} ครั้ง (${data.summary.leave_days} วัน)</p>
+                            `;
+                            historyList.appendChild(summaryEl);
+                        }
+
+                        const logs = data.logs || [];
+                        const leaves = data.leaves || [];
+
+                        if (logs.length === 0 && leaves.length === 0) {
+                            const emptyEl = document.createElement("p");
+                            emptyEl.className = "text-center text-gray-500";
+                            emptyEl.textContent = "ไม่พบข้อมูลในเดือนนี้";
+                            historyList.appendChild(emptyEl);
+                            return;
+                        }
+
+                        logs.forEach(log => {
+                            const d = new Date(log.time);
+                            const dateStr = d.toLocaleString('en-CA', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' });
+                            const timeStr = d.toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' });
+                            const logElement = document.createElement("div");
+                            logElement.className = "p-3 border rounded-lg bg-gray-50";
+                            logElement.innerHTML = `
+                                <p class="font-semibold">${dateStr}</p>
+                                <p>เข้างาน: ${timeStr} (${log.status})</p>
+                                <p>ระยะจากออฟฟิศ: ${log.distance_m} ม.</p>
+                            `;
+                            historyList.appendChild(logElement);
+                        });
+
+                        leaves.forEach(leave => {
+                            const leaveElement = document.createElement("div");
+                            leaveElement.className = "p-3 border rounded-lg bg-yellow-50";
+                            leaveElement.innerHTML = `
+                                <p class="font-semibold">ลา: ${leave.start} ถึง ${leave.end}</p>
+                                <p>ประเภท: ${leave.type}</p>
+                            `;
+                            historyList.appendChild(leaveElement);
+                        });
+
+                    } else {
+                        historyList.innerHTML = `<p class="error-message text-center">${data.error || "เกิดข้อผิดพลาดในการดึงประวัติ"}</p>`;
+                    }
+                } catch (e) {
+                    console.error("Error fetching history:", e);
+                    historyList.innerHTML = `<p class="error-message text-center">ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้: ${e.message}</p>`;
+                }
+            };
+
+            historyMonthSelect.addEventListener("change", fetchHistory);
+            historyYearSelect.addEventListener("change", fetchHistory);
+
+            fetchHistory();
+        }
+
+        async function handleSubmitLeave() {
+            const leaveType = document.getElementById("leaveType").value;
+            const startDate = document.getElementById("startDate").value;
+            const endDate = document.getElementById("endDate").value;
+            const reason = document.getElementById("reason").value;
+            const leaveError = document.getElementById("leaveError");
+            leaveError.textContent = "";
+
+            if (!leaveType || !startDate || !endDate) {
+                leaveError.textContent = "กรุณากรอกข้อมูลให้ครบถ้วน";
+                return;
+            }
+
+            if (new Date(startDate) > new Date(endDate)) {
+                leaveError.textContent = "วันที่เริ่มต้นต้องไม่เกินวันที่สิ้นสุด";
+                return;
+            }
+
+            const telegramUserId = Telegram.WebApp.initDataUnsafe.user.id;
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/leave`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "X-Telegram-Init-Data": Telegram.WebApp.initData,
+                    },
+                    body: JSON.stringify({ telegram_user_id: telegramUserId, leave_type: leaveType, start_date: startDate, end_date: endDate, reason }),
+                });
+                const data = await response.json();
+
+                if (data.ok) {
+                    alert("ส่งคำขอลาสำเร็จ");
+                    checkUserStatus();
+                } else {
+                    leaveError.textContent = data.error || "เกิดข้อผิดพลาดในการส่งคำขอลา";
+                }
+            } catch (e) {
+                console.error("Error submitting leave request:", e);
+                leaveError.textContent = `ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้: ${e.message}`;
+            }
+        }
+
+        // เริ่มตรวจสอบสถานะผู้ใช้ทันทีที่เปิดแอป
+        checkUserStatus();
+    </script>
+</body>
+</html>
