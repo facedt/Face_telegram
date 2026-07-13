@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="th">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -53,6 +53,21 @@
         .badge-red {
             @apply bg-red-200 text-red-800;
         }
+        /* ใช้แทน "hidden" (display:none) สำหรับ <input type="file"> โดยเฉพาะ —
+           หลาย mobile webview (รวมถึง Telegram embedded browser บางเวอร์ชัน)
+           จะไม่เปิดกล้อง/file picker เลยถ้าเรียก .click() บน input ที่ display:none
+           ต้องซ่อนแบบ "visually hidden" (ยังอยู่ใน layout แต่มองไม่เห็น) แทน */
+        .visually-hidden-file {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            white-space: nowrap;
+            border: 0;
+            opacity: 0;
+        }
     </style>
 </head>
 <body>
@@ -61,7 +76,7 @@
     </div>
 
     <script>
-        const API_BASE_URL = "https://your-worker-url.workers.dev"; // TODO: Replace with your Cloudflare Worker URL
+        const API_BASE_URL = "https://face-attendance-api.facetime.workers.dev"; // TODO: แก้เป็น URL ของ Cloudflare Worker ที่ deploy จริง ถ้าไม่ตรงกับนี้
 
         const app = document.getElementById("app");
 
@@ -108,25 +123,33 @@
                     `;
                     break;
                 case "camera":
+                    // ใช้ native file input (capture="user") แทน getUserMedia + video/canvas เดิม
+                    // เพราะ getUserMedia พังบ่อยบน Android 13 / Telegram บางเวอร์ชัน
                     screenHtml = `
-                        <h2 class="text-2xl font-bold mb-4">ถ่ายเซลฟี่</h2>
-                        <video id="video" class="w-full h-64 bg-gray-300 rounded-lg mb-4" autoplay playsinline></video>
-                        <canvas id="canvas" class="hidden"></canvas>
+                        <h2 class="text-2xl font-bold mb-4">${data.type === 'checkin' ? 'ถ่ายรูปลงชื่อเข้างาน' : 'ถ่ายรูปลงชื่อออกงาน'}</h2>
+                        <div id="photoPreviewWrap" class="w-full h-64 bg-gray-200 rounded-lg mb-4 flex items-center justify-center overflow-hidden">
+                            <img id="photoPreview" class="hidden w-full h-full object-cover" alt="รูปที่ถ่าย">
+                            <span id="photoPlaceholder" class="text-gray-500">ยังไม่ได้ถ่ายรูป</span>
+                        </div>
+                        <input type="file" accept="image/*" capture="user" id="photoInput" class="visually-hidden-file">
                         <p id="gpsStatus" class="text-gray-600 mb-4"><span class="badge badge-yellow">กำลังค้นหา GPS...</span></p>
                         <p id="cameraError" class="error-message"></p>
-                        <button id="captureBtn" class="btn btn-green w-full mb-2">ถ่ายรูป</button>
+                        <button id="takePhotoBtn" class="btn btn-green w-full mb-2">ถ่ายรูป</button>
+                        <button id="submitPhotoBtn" class="btn btn-green w-full mb-2 btn-disabled" disabled>ยืนยันและส่ง</button>
                         <button id="cancelCameraBtn" class="btn bg-gray-500 hover:bg-gray-700 w-full">ยกเลิก</button>
                     `;
                     break;
                 case "summary":
                     screenHtml = `
                         <h2 class="text-2xl font-bold mb-4">สรุปผลการลงชื่อ</h2>
-                        <p class="mb-2">สถานะ: <span class="font-semibold">${data.status === 'on_time' ? 'ตรงเวลา' : 'สาย'}</span></p>
-                        <p class="mb-2">เวลา: <span class="font-semibold">${new Date(data.check_in_time).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}</span></p>
-                        ${data.check_out_time ? `<p class="mb-2">เวลาออก: <span class="font-semibold">${new Date(data.check_out_time).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}</span></p>` : ''}
-                        ${data.work_hours ? `<p class="mb-2">ชั่วโมงทำงาน: <span class="font-semibold">${data.work_hours.toFixed(2)} ชม.</span></p>` : ''}
-                        <p class="mb-2">พื้นที่: <span class="font-semibold">${data.location_status === 'in_office' ? 'ในพื้นที่' : 'นอกพื้นที่'}</span></p>
-                        ${data.telegramWarning ? `<p class="error-message">${data.telegramWarning}</p>` : ''}
+                        <p class="mb-2">ชื่อ: <span class="font-semibold">${data.name || ''}</span></p>
+                        ${data.status ? `<p class="mb-2">สถานะ: <span class="font-semibold">${data.status}</span></p>` : ''}
+                        ${data.time ? `<p class="mb-2">เวลาเข้างาน: <span class="font-semibold">${data.time} น.</span></p>` : ''}
+                        ${data.check_in_time ? `<p class="mb-2">เข้างาน: <span class="font-semibold">${data.check_in_time} น.</span></p>` : ''}
+                        ${data.check_out_time ? `<p class="mb-2">ออกงาน: <span class="font-semibold">${data.check_out_time} น.</span></p>` : ''}
+                        ${typeof data.work_hours === 'number' ? `<p class="mb-2">ชั่วโมงทำงาน: <span class="font-semibold">${data.work_hours.toFixed(2)} ชม.</span></p>` : ''}
+                        <p class="mb-2">พื้นที่: <span class="font-semibold">${data.out_of_area ? 'นอกพื้นที่' : 'ในพื้นที่'}</span>${typeof data.distance_m === 'number' ? ` (${data.distance_m} ม.)` : ''}</p>
+                        ${data.warning ? `<p class="error-message">${data.warning}</p>` : ''}
                         <button id="backToMainBtn" class="btn btn-green w-full mt-4">กลับหน้าหลัก</button>
                     `;
                     break;
@@ -196,7 +219,7 @@
                     document.getElementById("backToMainBtn").addEventListener("click", () => checkUserStatus());
                     break;
                 case "history":
-                    setupHistory(data);
+                    setupHistory();
                     document.getElementById("backToMainBtn").addEventListener("click", () => checkUserStatus());
                     break;
                 case "leave-form":
@@ -276,7 +299,7 @@
                 const data = await response.json();
 
                 if (data.ok) {
-                    checkUserStatus(); // Go back to main screen after successful registration
+                    checkUserStatus(); // กลับหน้าหลักหลังลงทะเบียนสำเร็จ
                 } else {
                     registerError.textContent = data.error || "เกิดข้อผิดพลาดในการลงทะเบียน";
                 }
@@ -286,44 +309,56 @@
             }
         }
 
-        let videoStream = null;
-        let currentActionType = null; // 'checkin' or 'checkout'
+        // ── ถ่ายรูปด้วย native file input (แทน getUserMedia + video/canvas เดิม) ──
+        let currentActionType = null; // 'checkin' หรือ 'checkout'
+        let capturedPhotoBase64 = null; // base64 ดิบ ไม่มี prefix "data:image/...;base64,"
 
-        async function setupCamera(type) {
+        function setupCamera(type) {
             currentActionType = type;
-            const video = document.getElementById("video");
+            capturedPhotoBase64 = null;
+
+            const photoInput = document.getElementById("photoInput");
+            const takePhotoBtn = document.getElementById("takePhotoBtn");
+            const submitPhotoBtn = document.getElementById("submitPhotoBtn");
+
+            takePhotoBtn.addEventListener("click", () => photoInput.click());
+            photoInput.addEventListener("change", handlePhotoSelected);
+            submitPhotoBtn.addEventListener("click", submitAttendance);
+
+            getGPSLocation();
+        }
+
+        function handlePhotoSelected(e) {
             const cameraError = document.getElementById("cameraError");
             cameraError.textContent = "";
 
-            if (!window.isSecureContext) {
-                cameraError.textContent = "ต้องเปิดผ่าน HTTPS เท่านั้น";
+            const file = e.target.files && e.target.files[0];
+            if (!file) return;
+
+            if (file.size > 8 * 1024 * 1024) {
+                cameraError.textContent = "ไฟล์รูปภาพใหญ่เกินไป กรุณาลองถ่ายใหม่";
                 return;
             }
 
-            try {
-                videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
-                video.srcObject = videoStream;
-                await video.play().catch(() => {});
-                document.getElementById("captureBtn").addEventListener("click", handleCapture);
-                getGPSLocation();
-            } catch (err) {
-                console.error("Camera error:", err);
-                if (err.name === "NotAllowedError") {
-                    cameraError.textContent = "กรุณาอนุญาตการใช้กล้อง";
-                } else if (err.name === "NotFoundError") {
-                    cameraError.textContent = "ไม่พบกล้องบนอุปกรณ์นี้";
-                } else if (err.name === "NotReadableError") {
-                    cameraError.textContent = "กล้องถูกใช้งานโดยแอปอื่นอยู่";
-                } else {
-                    cameraError.textContent = `เกิดข้อผิดพลาดในการเข้าถึงกล้อง: ${err.message}`;
-                }
-                // Provide a retry button if camera access is denied
-                const retryBtn = document.createElement("button");
-                retryBtn.textContent = "ลองใหม่";
-                retryBtn.className = "btn btn-green w-full mt-4";
-                retryBtn.addEventListener("click", () => setupCamera(type));
-                app.appendChild(retryBtn);
-            }
+            const reader = new FileReader();
+            reader.onload = () => {
+                const dataUrl = reader.result;
+                capturedPhotoBase64 = dataUrl.split(",")[1] || null;
+
+                const preview = document.getElementById("photoPreview");
+                const placeholder = document.getElementById("photoPlaceholder");
+                preview.src = dataUrl;
+                preview.classList.remove("hidden");
+                placeholder.classList.add("hidden");
+
+                const submitBtn = document.getElementById("submitPhotoBtn");
+                submitBtn.disabled = false;
+                submitBtn.classList.remove("btn-disabled");
+            };
+            reader.onerror = () => {
+                cameraError.textContent = "ไม่สามารถอ่านไฟล์รูปภาพได้ กรุณาลองใหม่";
+            };
+            reader.readAsDataURL(file);
         }
 
         let currentGpsLat = null;
@@ -341,33 +376,32 @@
                 },
                 (error) => {
                     console.error("GPS error:", error);
-                    gpsStatus.innerHTML = `<span class="badge badge-red">ไม่พบ GPS (${error.message})</span>`;
-                    // Allow user to proceed but warn them
-                    if (confirm("ไม่สามารถระบุตำแหน่ง GPS ได้ คุณยังต้องการลงชื่อเข้างาน/ออกงานโดยไม่มีพิกัดหรือไม่?")) {
-                        currentGpsLat = null;
-                        currentGpsLon = null;
-                    } else {
-                        checkUserStatus(); // Go back to main if user cancels
-                    }
+                    currentGpsLat = null;
+                    currentGpsLon = null;
+                    // backend บังคับต้องมีพิกัด GPS เสมอ จึงไม่ให้ข้ามขั้นตอนนี้ได้เหมือนเดิม
+                    gpsStatus.innerHTML = `<span class="badge badge-red">ไม่พบ GPS (${error.message}) — กรุณาเปิดสัญญาณ GPS แล้วลองใหม่</span>`;
                 },
                 { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
             );
         }
 
-        async function handleCapture() {
-            const video = document.getElementById("video");
-            const canvas = document.getElementById("canvas");
-            const context = canvas.getContext("2d");
+        async function submitAttendance() {
+            const cameraError = document.getElementById("cameraError");
+            cameraError.textContent = "";
 
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            context.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-            const selfieBase64 = canvas.toDataURL("image/jpeg");
-
-            if (videoStream) {
-                videoStream.getTracks().forEach(track => track.stop());
+            if (!capturedPhotoBase64) {
+                cameraError.textContent = "กรุณาถ่ายรูปก่อน";
+                return;
             }
+            if (currentGpsLat == null || currentGpsLon == null) {
+                cameraError.textContent = "ไม่มีพิกัด GPS กรุณาเปิดสัญญาณ GPS แล้วลองใหม่";
+                getGPSLocation();
+                return;
+            }
+
+            const submitBtn = document.getElementById("submitPhotoBtn");
+            submitBtn.disabled = true;
+            submitBtn.textContent = "กำลังส่ง...";
 
             const telegramUserId = Telegram.WebApp.initDataUnsafe.user.id;
             const endpoint = currentActionType === "checkin" ? "/api/checkin" : "/api/checkout";
@@ -381,7 +415,7 @@
                     },
                     body: JSON.stringify({
                         telegram_user_id: telegramUserId,
-                        selfie_base64: selfieBase64,
+                        photo_base64: capturedPhotoBase64,
                         gps_lat: currentGpsLat,
                         gps_lon: currentGpsLon,
                     }),
@@ -389,7 +423,7 @@
                 const data = await response.json();
 
                 if (data.ok) {
-                    showScreen("summary", { ...data.log, work_hours: data.work_hours, telegramWarning: data.telegramWarning });
+                    showScreen("summary", data);
                 } else {
                     alert(data.error || "เกิดข้อผิดพลาดในการลงชื่อ");
                     checkUserStatus();
@@ -407,7 +441,7 @@
             const historyList = document.getElementById("historyList");
 
             const currentYear = new Date().getFullYear();
-            for (let i = 0; i < 5; i++) { // Last 5 years
+            for (let i = 0; i < 5; i++) { // ย้อนหลัง 5 ปี
                 const year = currentYear - i;
                 const option = document.createElement("option");
                 option.value = year;
@@ -441,32 +475,49 @@
 
                     if (data.ok) {
                         historyList.innerHTML = "";
-                        if (data.details.length === 0 && data.leave_requests.length === 0) {
-                            historyList.innerHTML = "<p class=\"text-center text-gray-500\">ไม่พบข้อมูลในเดือนนี้</p>";
+
+                        if (data.summary) {
+                            const summaryEl = document.createElement("div");
+                            summaryEl.className = "p-3 border rounded-lg bg-blue-50";
+                            summaryEl.innerHTML = `
+                                <p class="font-semibold">สรุปเดือนนี้</p>
+                                <p>เข้างาน ${data.summary.checkins} วัน (ตรงเวลา ${data.summary.on_time} / สาย ${data.summary.late})</p>
+                                <p>ลา ${data.summary.leave_count} ครั้ง (${data.summary.leave_days} วัน)</p>
+                            `;
+                            historyList.appendChild(summaryEl);
+                        }
+
+                        const logs = data.logs || [];
+                        const leaves = data.leaves || [];
+
+                        if (logs.length === 0 && leaves.length === 0) {
+                            const emptyEl = document.createElement("p");
+                            emptyEl.className = "text-center text-gray-500";
+                            emptyEl.textContent = "ไม่พบข้อมูลในเดือนนี้";
+                            historyList.appendChild(emptyEl);
                             return;
                         }
 
-                        // Display attendance logs
-                        data.details.forEach(log => {
+                        logs.forEach(log => {
+                            const d = new Date(log.time);
+                            const dateStr = d.toLocaleString('en-CA', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' });
+                            const timeStr = d.toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' });
                             const logElement = document.createElement("div");
                             logElement.className = "p-3 border rounded-lg bg-gray-50";
                             logElement.innerHTML = `
-                                <p class="font-semibold">${log.date}</p>
-                                <p>เข้างาน: ${log.check_in} (${log.status === 'on_time' ? 'ตรงเวลา' : 'สาย'})</p>
-                                ${log.check_out ? `<p>ออกงาน: ${log.check_out}</p>` : ''}
-                                <p>พื้นที่: ${log.location_status === 'in_office' ? 'ในพื้นที่' : 'นอกพื้นที่'}</p>
+                                <p class="font-semibold">${dateStr}</p>
+                                <p>เข้างาน: ${timeStr} (${log.status})</p>
+                                <p>ระยะจากออฟฟิศ: ${log.distance_m} ม.</p>
                             `;
                             historyList.appendChild(logElement);
                         });
 
-                        // Display leave requests
-                        data.leave_requests.forEach(leave => {
+                        leaves.forEach(leave => {
                             const leaveElement = document.createElement("div");
                             leaveElement.className = "p-3 border rounded-lg bg-yellow-50";
                             leaveElement.innerHTML = `
-                                <p class="font-semibold">ลา: ${leave.start_date} ถึง ${leave.end_date}</p>
-                                <p>ประเภท: ${leave.leave_type}</p>
-                                <p>เหตุผล: ${leave.reason || 'ไม่มี'}</p>
+                                <p class="font-semibold">ลา: ${leave.start} ถึง ${leave.end}</p>
+                                <p>ประเภท: ${leave.type}</p>
                             `;
                             historyList.appendChild(leaveElement);
                         });
@@ -528,7 +579,7 @@
             }
         }
 
-        // Initial check
+        // เริ่มตรวจสอบสถานะผู้ใช้ทันทีที่เปิดแอป
         checkUserStatus();
     </script>
 </body>
