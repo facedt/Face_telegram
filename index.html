@@ -425,6 +425,7 @@
         <span id="btn-register-label">ลงทะเบียน</span>
       </button>
       <p id="reg-hint" class="text-center mt-3 min-h-[18px]" style="font-size:12px;color:var(--danger);"></p>
+      <button id="btn-cancel-register" type="button" class="btn btn-outline mt-2">ยกเลิก กลับหน้าเช็คอิน</button>
     </div>
   </section>
 
@@ -444,6 +445,7 @@
           <span id="today-date">—</span>
         </div>
       </div>
+      <button id="btn-new-register" type="button" style="background:none;border:none;padding:0;margin:-10px 0 14px;font-size:12px;color:var(--ink3);text-decoration:underline;cursor:pointer;">ไม่ใช่คุณ? ลงทะเบียนคนใหม่</button>
 
       <!-- Status banner -->
       <div id="status-banner" class="status-banner info hidden" style="margin-bottom:16px;">
@@ -580,6 +582,7 @@
     <h2 id="result-title" style="font-size:22px;font-weight:700;"></h2>
     <p id="result-detail" style="font-size:14px;color:var(--ink2);margin-top:8px;line-height:1.6;"></p>
     <div style="margin-top:28px;display:flex;flex-direction:column;gap:10px;">
+      <button id="btn-goto-register" class="btn btn-outline hidden">ไปลงทะเบียน</button>
       <button id="btn-back" class="btn btn-primary">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
         กลับหน้าหลัก
@@ -691,6 +694,7 @@ function todayISO() {
    ================================================================ */
 let todayStatus = "not_checked_in"; // not_checked_in | checked_in | checked_out
 let empName = "";
+let localActionTaken = false; // true หลัง checkin/checkout สำเร็จในเซสชันนี้ กัน /api/me ที่มาช้าทับสถานะที่ใหม่กว่า
 
 /* ================================================================
    CLOCK
@@ -1062,18 +1066,18 @@ async function submitAttendance(action) {
     });
 
     if (isCheckin) {
-      if (res.ok) todayStatus = "checked_in";
+      if (res.ok) { todayStatus = "checked_in"; localActionTaken = true; }
       showResult(res.ok,
         res.ok
           ? { title: "ลงชื่อเข้างานสำเร็จ ✅", detail: `${res.name} • ${res.time} น. • ${res.status}` }
-          : { title: "ลงชื่อไม่สำเร็จ", detail: res.error || "กรุณาลองใหม่อีกครั้ง" }
+          : { title: "ลงชื่อไม่สำเร็จ", detail: res.error || "กรุณาลองใหม่อีกครั้ง", showRegisterCta: res.error === "ยังไม่ได้ลงทะเบียน" }
       );
     } else {
-      if (res.ok) todayStatus = "checked_out";
+      if (res.ok) { todayStatus = "checked_out"; localActionTaken = true; }
       showResult(res.ok,
         res.ok
           ? { title: "ลงชื่อออกงานสำเร็จ ✅", detail: `${res.name} • เข้า ${res.check_in_time} → ออก ${res.check_out_time} น. • ทำงาน ${Number(res.work_hours).toFixed(1)} ชม.` }
-          : { title: "ลงชื่อไม่สำเร็จ", detail: res.error || "กรุณาลองใหม่อีกครั้ง" }
+          : { title: "ลงชื่อไม่สำเร็จ", detail: res.error || "กรุณาลองใหม่อีกครั้ง", showRegisterCta: res.error === "ยังไม่ได้ลงทะเบียน" }
       );
     }
   } catch (e) {
@@ -1093,7 +1097,7 @@ $("btn-checkout").addEventListener("click", () => openCamera("checkout"));
 /* ================================================================
    RESULT SCREEN
    ================================================================ */
-function showResult(ok, { title, detail }) {
+function showResult(ok, { title, detail, showRegisterCta = false }) {
   const icon = $("result-icon");
   if (ok) {
     icon.style.background = "var(--success-l)";
@@ -1104,8 +1108,15 @@ function showResult(ok, { title, detail }) {
   }
   $("result-title").textContent = title;
   $("result-detail").textContent = detail;
+  $("btn-goto-register").classList.toggle("hidden", !showRegisterCta);
   showScreen("result");
 }
+
+$("btn-goto-register").addEventListener("click", () => {
+  $("reg-name").value = "";
+  $("reg-hint").textContent = "";
+  showScreen("register");
+});
 
 $("btn-back").addEventListener("click", () => {
   showScreen("app");
@@ -1155,6 +1166,18 @@ $("btn-register").addEventListener("click", async () => {
 
 $("reg-name").addEventListener("keydown", (e) => {
   if (e.key === "Enter") $("btn-register").click();
+});
+
+$("btn-new-register").addEventListener("click", () => {
+  $("reg-name").value = "";
+  $("reg-hint").textContent = "";
+  showScreen("register");
+});
+
+$("btn-cancel-register").addEventListener("click", () => {
+  showScreen("app");
+  applyCheckinState();
+  if (todayStatus !== "checked_out" && gpsWatchId === null) startGPS();
 });
 
 /* ================================================================
@@ -1249,7 +1272,34 @@ async function loadSummary() {
 /* ================================================================
    BOOT
    ================================================================ */
-async function boot(isRetry = false) {
+async function refreshIdentity() {
+  try {
+    const res = await api(`/api/me?id=${encodeURIComponent(TELEGRAM_USER_ID)}`, { method: "GET", retries: 3 });
+    if (res.registered) {
+      empName = res.name;
+      $("emp-name").textContent = res.name;
+      // ถ้าผู้ใช้เพิ่ง checkin/checkout ไปแล้วระหว่างที่ request นี้ยังไม่ตอบกลับ ห้ามทับสถานะที่ใหม่กว่า
+      if (!localActionTaken) {
+        todayStatus = res.today_status || "not_checked_in";
+        applyCheckinState();
+      }
+    } else {
+      $("emp-name").textContent = "ยังไม่ได้ลงทะเบียน";
+    }
+  } catch (e) {
+    $("emp-name").innerHTML = 'ไม่ทราบชื่อ — <a href="#" id="retry-me-link" style="color:var(--primary);text-decoration:underline;">ลองใหม่</a>';
+    const link = $("retry-me-link");
+    if (link) {
+      link.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        $("emp-name").textContent = "กำลังโหลดชื่อ…";
+        refreshIdentity();
+      });
+    }
+  }
+}
+
+async function boot() {
   if (!TELEGRAM_USER_ID) {
     $("screen-loading").innerHTML = `
       <div style="text-align:center;padding:40px 20px;">
@@ -1260,38 +1310,19 @@ async function boot(isRetry = false) {
     return;
   }
 
-  // หน่วงสั้นๆ เฉพาะตอนเปิดแอปครั้งแรก (ไม่ใช่ตอนกด "ลองอีกครั้ง") — WebView ของ Telegram
-  // บางเครื่อง/บางเวอร์ชัน เครือข่ายยังไม่พร้อมทันทีตอนหน้าเว็บเพิ่งโหลดเสร็จ ทำให้ fetch
-  // ครั้งแรกสุดพังทั้งที่เครื่องต่อเน็ตอยู่ปกติ (อาการ: ทุกครั้งที่เปิดแอปใหม่ขึ้น error
-  // แต่พอลองใหม่/เปิดซ้ำกลับใช้ได้)
-  if (!isRetry) await new Promise(r => setTimeout(r, 300));
+  // เข้าหน้าเช็คอินทันที ไม่รอผลจาก /api/me ก่อน — เดิมทั้งแอปถูก gate ไว้หลัง request
+  // เดียวนี้ ถ้ามันพัง/ช้า คนที่ลงทะเบียนแล้วจะเข้าแอปไม่ได้เลย (ปัญหาที่เจอมาหลายรอบ)
+  // คนที่ยังไม่ได้ลงทะเบียนจริงๆ จะเจอ error "ยังไม่ได้ลงทะเบียน" ตอนกดเช็คอิน ซึ่งมีปุ่มพา
+  // ไปหน้าลงทะเบียนให้ทันที และมีลิงก์ "ลงทะเบียนคนใหม่" ให้กดเองได้ตลอดเวลาอยู่แล้วด้วย
+  empName = "";
+  todayStatus = "not_checked_in"; // ค่าเริ่มต้นแบบมองโลกในแง่ดี ถ้าจริงๆ เช็คอินไปแล้ว backend จะปฏิเสธเองตอนลงซ้ำ (กันซ้ำด้วย unique index)
+  $("emp-name").textContent = "กำลังโหลดชื่อ…";
+  showScreen("app");
+  startClock();
+  applyCheckinState();
+  startGPS();
 
-  try {
-    const res = await api(`/api/me?id=${encodeURIComponent(TELEGRAM_USER_ID)}`, { method: "GET", retries: 4 });
-    if (res.registered) {
-      empName = res.name;
-      $("emp-name").textContent = res.name;
-      todayStatus = res.today_status || "not_checked_in";
-      showScreen("app");
-      startClock();
-      applyCheckinState();
-      if (todayStatus !== "checked_out") startGPS();
-    } else {
-      showScreen("register");
-    }
-  } catch (e) {
-    // Show register screen with error hint + ปุ่มลองใหม่แบบไม่ต้องปิดแอปทั้งหมด
-    showScreen("register");
-    $("reg-hint").innerHTML = '⚠️ เชื่อมต่อ server ไม่สำเร็จ — <a href="#" id="retry-boot-link" style="color:var(--primary);text-decoration:underline;">ลองอีกครั้ง</a>';
-    const retryLink = $("retry-boot-link");
-    if (retryLink) {
-      retryLink.addEventListener("click", (ev) => {
-        ev.preventDefault();
-        $("reg-hint").textContent = "กำลังลองเชื่อมต่อใหม่…";
-        boot(true);
-      });
-    }
-  }
+  refreshIdentity(); // ดึงชื่อ/สถานะจริงจาก server แบบไม่บล็อก UI
 }
 
 boot();
