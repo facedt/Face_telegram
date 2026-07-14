@@ -740,6 +740,17 @@ function startGPS() {
   _startWatch();
 }
 
+// บาง WebView (รวมถึง Telegram บางแพลตฟอร์ม) จะไม่โชว์ popup ขออนุญาต GPS ให้อัตโนมัติ
+// ถ้าเรียกตอนหน้าเว็บเพิ่งโหลดเสร็จโดยไม่มี user gesture จริงๆ นำหน้า — ต้องรอการแตะจอก่อน
+// ถึงจะยอมเปิด popup ทำให้ต้องกด pill GPS เองทุกครั้งกว่าจะขึ้น ดักการแตะจอครั้งแรกที่ไหน
+// ก็ได้ (ไม่จำเป็นต้องเป็นปุ่ม GPS โดยตรง) แล้วลองขอ GPS ซ้ำอีกที ถ้ายังไม่ได้พิกัดจากรอบแรก
+function armFirstTapGPSFallback() {
+  const retryOnFirstTap = () => {
+    if (todayStatus !== "checked_out" && !gps) startGPS();
+  };
+  document.addEventListener("pointerdown", retryOnFirstTap, { once: true, passive: true });
+}
+
 function _startWatch() {
   if (gpsWatchId !== null) {
     navigator.geolocation.clearWatch(gpsWatchId);
@@ -1322,6 +1333,7 @@ async function boot() {
   startClock();
   applyCheckinState();
   startGPS();
+  armFirstTapGPSFallback();
 
   refreshIdentity(); // ดึงชื่อ/สถานะจริงจาก server แบบไม่บล็อก UI
 }
