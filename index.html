@@ -1,586 +1,1281 @@
 <!DOCTYPE html>
 <html lang="th">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Attendance Mini App</title>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        body {
-            font-family: sans-serif;
-            background-color: #f0f2f5;
-            color: #333;
-        }
-        .container {
-            max-width: 400px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #fff;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-        }
-        .btn {
-            @apply bg-blue-500 text-white font-bold py-2 px-4 rounded;
-        }
-        .btn-green {
-            @apply bg-green-500 hover:bg-green-700;
-        }
-        .btn-red {
-            @apply bg-red-500 hover:bg-red-700;
-        }
-        .btn-disabled {
-            @apply bg-gray-400 cursor-not-allowed;
-        }
-        .input-field {
-            @apply shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline;
-        }
-        .error-message {
-            @apply text-red-500 text-xs italic mt-2;
-        }
-        .success-message {
-            @apply text-green-500 text-xs italic mt-2;
-        }
-        .badge {
-            @apply inline-block px-2 py-1 rounded-full text-xs font-semibold;
-        }
-        .badge-green {
-            @apply bg-green-200 text-green-800;
-        }
-        .badge-yellow {
-            @apply bg-yellow-200 text-yellow-800;
-        }
-        .badge-red {
-            @apply bg-red-200 text-red-800;
-        }
-        /* ใช้แทน "hidden" (display:none) สำหรับ <input type="file"> โดยเฉพาะ —
-           หลาย mobile webview (รวมถึง Telegram embedded browser บางเวอร์ชัน)
-           จะไม่เปิดกล้อง/file picker เลยถ้าเรียก .click() บน input ที่ display:none
-           ต้องซ่อนแบบ "visually hidden" (ยังอยู่ใน layout แต่มองไม่เห็น) แทน */
-        .visually-hidden-file {
-            position: absolute;
-            width: 1px;
-            height: 1px;
-            padding: 0;
-            margin: -1px;
-            overflow: hidden;
-            white-space: nowrap;
-            border: 0;
-            opacity: 0;
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#0F172A" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>ลงชื่อเข้างาน</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    /* ===== Design Tokens ===== */
+    :root {
+      --bg:        #F0F2F5;
+      --surface:   #FFFFFF;
+      --surface2:  #F8F9FA;
+      --ink:       #0F172A;
+      --ink2:      #475569;
+      --ink3:      #94A3B8;
+      --line:      #E2E8F0;
+      --primary:   #1E40AF;
+      --primary-h: #1D4ED8;
+      --primary-l: #DBEAFE;
+      --success:   #059669;
+      --success-l: #D1FAE5;
+      --danger:    #DC2626;
+      --danger-l:  #FEE2E2;
+      --warn:      #D97706;
+      --warn-l:    #FEF3C7;
+      --radius:    16px;
+      --radius-sm: 10px;
+      --shadow:    0 1px 3px rgba(0,0,0,.08), 0 4px 16px rgba(0,0,0,.06);
+      --shadow-lg: 0 4px 24px rgba(0,0,0,.12), 0 1px 4px rgba(0,0,0,.06);
+    }
+
+    /* ===== Base ===== */
+    *, *::before, *::after { box-sizing: border-box; }
+    html { background: var(--bg); }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Sukhumvit Set",
+        "Thonburi", "Noto Sans Thai", sans-serif;
+      color: var(--ink);
+      background: var(--bg);
+      -webkit-tap-highlight-color: transparent;
+      -webkit-font-smoothing: antialiased;
+      padding-bottom: 80px;
+      min-height: 100svh;
+    }
+
+    /* ===== Screen transitions ===== */
+    .screen { transition: opacity .2s ease; }
+    .screen.hidden { display: none !important; }
+
+    /* ===== Header ===== */
+    .app-header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--line);
+      position: sticky; top: 0; z-index: 40;
+      padding: env(safe-area-inset-top, 0) 0 0;
+    }
+    .app-header-inner {
+      max-width: 480px; margin: 0 auto;
+      padding: 14px 20px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .app-logo {
+      display: flex; align-items: center; gap: 10px;
+    }
+    .app-logo-icon {
+      width: 36px; height: 36px; border-radius: 10px;
+      background: var(--primary); display: flex; align-items: center; justify-content: center;
+    }
+    .app-title { font-size: 16px; font-weight: 700; letter-spacing: -.3px; }
+    .app-subtitle { font-size: 11px; color: var(--ink3); margin-top: 1px; }
+    #clock {
+      font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums;
+      color: var(--ink); letter-spacing: -.5px;
+    }
+
+    /* ===== Card ===== */
+    .card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .card-body { padding: 20px; }
+
+    /* ===== Camera Frame ===== */
+    .camera-wrap {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 4/3;
+      background: #0F172A;
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: var(--shadow-lg);
+    }
+    .camera-wrap video,
+    .camera-wrap canvas,
+    .camera-wrap img.preview-img {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      object-fit: cover;
+    }
+    .camera-overlay {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 12px; color: rgba(255,255,255,.75);
+      pointer-events: none;
+    }
+    .camera-overlay.hidden { display: none; }
+    .camera-overlay-icon {
+      width: 56px; height: 56px;
+      border-radius: 50%;
+      background: rgba(255,255,255,.12);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .camera-overlay-text { font-size: 13px; font-weight: 500; }
+
+    /* corner guides */
+    .cam-guide {
+      position: absolute; width: 44px; height: 44px;
+      border-color: rgba(255,255,255,.5); border-style: solid;
+      border-width: 0;
+    }
+    .cam-guide.tl { top: 12px; left: 12px; border-top-width: 2px; border-left-width: 2px; border-radius: 4px 0 0 0; }
+    .cam-guide.tr { top: 12px; right: 12px; border-top-width: 2px; border-right-width: 2px; border-radius: 0 4px 0 0; }
+    .cam-guide.bl { bottom: 12px; left: 12px; border-bottom-width: 2px; border-left-width: 2px; border-radius: 0 0 0 4px; }
+    .cam-guide.br { bottom: 12px; right: 12px; border-bottom-width: 2px; border-right-width: 2px; border-radius: 0 0 4px 0; }
+
+    /* camera action bar */
+    .cam-action-bar {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      padding: 16px;
+      background: linear-gradient(to top, rgba(0,0,0,.6) 0%, transparent 100%);
+      display: flex; align-items: center; justify-content: center; gap: 20px;
+    }
+    .cam-action-bar.hidden { display: none; }
+    .cam-shutter {
+      width: 64px; height: 64px; border-radius: 50%;
+      background: #fff; border: 4px solid rgba(255,255,255,.4);
+      cursor: pointer; transition: transform .1s ease, opacity .1s ease;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 2px 12px rgba(0,0,0,.4);
+    }
+    .cam-shutter:active { transform: scale(.92); }
+    .cam-shutter-inner { width: 48px; height: 48px; border-radius: 50%; background: #fff; }
+    .cam-btn-secondary {
+      width: 44px; height: 44px; border-radius: 50%;
+      background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.3);
+      color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center;
+      transition: background .15s ease;
+    }
+    .cam-btn-secondary:active { background: rgba(255,255,255,.3); }
+
+    /* camera status bar */
+    .cam-status-bar {
+      position: absolute; top: 0; left: 0; right: 0;
+      padding: 10px 14px;
+      background: linear-gradient(to bottom, rgba(0,0,0,.5) 0%, transparent 100%);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .cam-status-bar.hidden { display: none; }
+    .cam-rec-dot {
+      width: 8px; height: 8px; border-radius: 50%; background: #EF4444;
+      animation: blink 1.2s ease-in-out infinite;
+    }
+    @keyframes blink { 0%,100% { opacity:1; } 50% { opacity:.3; } }
+    .cam-status-text { font-size: 11px; color: rgba(255,255,255,.9); font-weight: 500; }
+
+    /* ===== Pill badges ===== */
+    .pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      border-radius: 9999px; padding: 6px 12px;
+      font-size: 12px; font-weight: 500;
+      background: var(--surface); border: 1px solid var(--line);
+      color: var(--ink2); transition: all .2s ease;
+    }
+    .pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink3); flex-shrink: 0; }
+    .pill.ok { background: var(--success-l); border-color: #A7F3D0; color: #065F46; }
+    .pill.ok .dot { background: var(--success); }
+    .pill.err { background: var(--danger-l); border-color: #FECACA; color: #991B1B; }
+    .pill.err .dot { background: var(--danger); }
+    .pill.warn { background: var(--warn-l); border-color: #FDE68A; color: #92400E; }
+    .pill.warn .dot { background: var(--warn); }
+    .pill.searching .dot { background: var(--warn); animation: blink 1s ease-in-out infinite; }
+
+    /* ===== Buttons ===== */
+    .btn {
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      border-radius: 9999px; font-size: 15px; font-weight: 600;
+      padding: 15px 24px; width: 100%; border: none; cursor: pointer;
+      transition: transform .08s ease, opacity .15s ease, box-shadow .15s ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .btn:active:not(:disabled) { transform: scale(.97); }
+    .btn:disabled { opacity: .4; cursor: not-allowed; box-shadow: none !important; }
+
+    .btn-primary {
+      background: var(--primary); color: #fff;
+      box-shadow: 0 4px 14px rgba(30,64,175,.35);
+    }
+    .btn-primary:hover:not(:disabled) { background: var(--primary-h); box-shadow: 0 6px 20px rgba(30,64,175,.4); }
+
+    .btn-danger {
+      background: #fff; color: var(--danger);
+      border: 2px solid var(--danger) !important;
+      box-shadow: 0 2px 8px rgba(220,38,38,.12);
+    }
+    .btn-danger:hover:not(:disabled) { background: var(--danger-l); }
+
+    .btn-outline {
+      background: var(--surface); color: var(--ink2);
+      border: 1px solid var(--line);
+    }
+    .btn-outline:hover:not(:disabled) { background: var(--surface2); }
+
+    /* ===== Spinner ===== */
+    .spin {
+      width: 18px; height: 18px; border-radius: 50%;
+      border: 2px solid rgba(255,255,255,.35);
+      border-top-color: #fff;
+      animation: sp .65s linear infinite; display: inline-block; flex-shrink: 0;
+    }
+    .spin-dark {
+      border-color: rgba(30,64,175,.2);
+      border-top-color: var(--primary);
+    }
+    @keyframes sp { to { transform: rotate(360deg); } }
+
+    /* ===== Form fields ===== */
+    .field {
+      background: var(--surface); border: 1.5px solid var(--line);
+      border-radius: var(--radius-sm); padding: 14px 16px;
+      font-size: 16px; width: 100%; outline: none; color: var(--ink);
+      transition: border-color .15s ease, box-shadow .15s ease;
+      -webkit-appearance: none;
+    }
+    .field:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(30,64,175,.12);
+    }
+
+    /* ===== Bottom Nav ===== */
+    .bottom-nav {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+      background: rgba(255,255,255,.95);
+      backdrop-filter: blur(20px) saturate(180%);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      border-top: 1px solid var(--line);
+      padding-bottom: env(safe-area-inset-bottom, 0);
+    }
+    .bottom-nav-inner { max-width: 480px; margin: 0 auto; display: grid; grid-template-columns: 1fr 1fr; }
+    .nav-btn {
+      display: flex; flex-direction: column; align-items: center; gap: 3px;
+      padding: 10px 0 12px; font-size: 10px; font-weight: 600;
+      color: var(--ink3); background: none; border: none; cursor: pointer;
+      transition: color .15s ease; letter-spacing: .3px; text-transform: uppercase;
+    }
+    .nav-btn .nav-icon {
+      width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;
+    }
+    .nav-btn.active { color: var(--primary); }
+    .nav-btn.active .nav-pill {
+      background: var(--primary-l); border-radius: 8px; padding: 2px 8px;
+    }
+
+    /* ===== Stat Cards ===== */
+    .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .stat-card {
+      background: var(--surface); border-radius: var(--radius);
+      padding: 16px; text-align: center;
+      box-shadow: var(--shadow);
+    }
+    .stat-num { font-size: 28px; font-weight: 700; letter-spacing: -1px; }
+    .stat-label { font-size: 11px; color: var(--ink3); margin-top: 4px; font-weight: 500; }
+
+    /* ===== List rows ===== */
+    .row-item {
+      background: var(--surface); border-radius: var(--radius-sm);
+      padding: 14px 16px; box-shadow: var(--shadow);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+
+    /* ===== Status banner ===== */
+    .status-banner {
+      border-radius: var(--radius-sm); padding: 12px 16px;
+      display: flex; align-items: center; gap: 10px;
+      font-size: 13px; font-weight: 500;
+    }
+    .status-banner.info { background: var(--primary-l); color: #1E3A8A; }
+    .status-banner.success { background: var(--success-l); color: #065F46; }
+    .status-banner.done { background: #F1F5F9; color: var(--ink2); }
+
+    /* ===== Result screen ===== */
+    .result-icon-wrap {
+      width: 80px; height: 80px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 20px; font-size: 36px;
+    }
+
+    /* ===== Register screen ===== */
+    .register-card {
+      background: var(--surface); border-radius: 20px;
+      padding: 28px 24px; box-shadow: var(--shadow-lg);
+    }
+    .register-logo {
+      width: 56px; height: 56px; border-radius: 16px;
+      background: var(--primary); display: flex; align-items: center;
+      justify-content: center; margin: 0 auto 20px;
+    }
+
+    /* ===== GPS accuracy ring ===== */
+    .gps-accuracy {
+      font-size: 10px; color: var(--ink3); margin-left: 2px;
+    }
+
+    /* ===== Misc ===== */
+    .divider { height: 1px; background: var(--line); margin: 16px 0; }
+    .section-label {
+      font-size: 11px; font-weight: 700; color: var(--ink3);
+      letter-spacing: .8px; text-transform: uppercase; margin-bottom: 10px;
+    }
+
+    /* ===== Loading screen ===== */
+    #screen-loading {
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      min-height: 60svh; gap: 16px;
+    }
+    .loading-logo {
+      width: 64px; height: 64px; border-radius: 18px;
+      background: var(--primary); display: flex;
+      align-items: center; justify-content: center; margin-bottom: 4px;
+    }
+    .loading-text { font-size: 14px; color: var(--ink3); font-weight: 500; }
+
+    /* ===== Toast ===== */
+    #toast {
+      position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%) translateY(20px);
+      background: #0F172A; color: #fff; border-radius: 9999px;
+      padding: 10px 20px; font-size: 13px; font-weight: 500;
+      opacity: 0; transition: opacity .2s ease, transform .2s ease;
+      z-index: 100; white-space: nowrap; pointer-events: none;
+      box-shadow: 0 4px 20px rgba(0,0,0,.25);
+    }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* ===== Retake overlay ===== */
+    .retake-bar {
+      position: absolute; top: 0; left: 0; right: 0;
+      padding: 10px 14px;
+      background: linear-gradient(to bottom, rgba(0,0,0,.5) 0%, transparent 100%);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .retake-bar.hidden { display: none; }
+    .retake-btn {
+      display: flex; align-items: center; gap: 6px;
+      background: rgba(255,255,255,.2); border: 1px solid rgba(255,255,255,.3);
+      color: #fff; border-radius: 9999px; padding: 5px 12px;
+      font-size: 12px; font-weight: 500; cursor: pointer;
+    }
+    .retake-btn:active { background: rgba(255,255,255,.35); }
+    .photo-ok-badge {
+      display: flex; align-items: center; gap: 6px;
+      background: rgba(5,150,105,.8); border-radius: 9999px;
+      padding: 5px 12px; font-size: 12px; font-weight: 600; color: #fff;
+    }
+  </style>
 </head>
 <body>
-    <div id="app" class="container mt-8">
-        <!-- Screens will be injected here by JavaScript -->
+
+  <!-- ===== TOAST ===== -->
+  <div id="toast"></div>
+
+  <!-- ===== HEADER ===== -->
+  <header class="app-header">
+    <div class="app-header-inner">
+      <div class="app-logo">
+        <div class="app-logo-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2">
+            <rect x="3" y="4" width="18" height="14" rx="2"/>
+            <circle cx="12" cy="11" r="3"/>
+          </svg>
+        </div>
+        <div>
+          <div class="app-title">ลงชื่อเข้างาน</div>
+          <div class="app-subtitle">08:30 – 17:30 น.</div>
+        </div>
+      </div>
+      <div id="clock" aria-live="polite">--:--:--</div>
     </div>
+  </header>
 
-    <script>
-        const API_BASE_URL = "https://face-attendance-api.facetime.workers.dev"; // TODO: แก้เป็น URL ของ Cloudflare Worker ที่ deploy จริง ถ้าไม่ตรงกับนี้
+  <!-- ===== SCREEN: LOADING ===== -->
+  <section id="screen-loading" class="screen max-w-[480px] mx-auto px-5">
+    <div class="loading-logo">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2">
+        <rect x="3" y="4" width="18" height="14" rx="2"/>
+        <circle cx="12" cy="11" r="3"/>
+      </svg>
+    </div>
+    <div class="spin spin-dark" style="width:28px;height:28px;border-width:3px;"></div>
+    <p class="loading-text">กำลังโหลดระบบ…</p>
+  </section>
 
-        const app = document.getElementById("app");
+  <!-- ===== SCREEN: REGISTER ===== -->
+  <section id="screen-register" class="screen hidden max-w-[480px] mx-auto px-5 py-8">
+    <div class="register-card">
+      <div class="register-logo">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+          <circle cx="12" cy="7" r="4"/>
+        </svg>
+      </div>
+      <h2 style="font-size:18px;font-weight:700;text-align:center;margin-bottom:6px;">ลงทะเบียนครั้งแรก</h2>
+      <p style="font-size:13px;color:var(--ink3);text-align:center;margin-bottom:24px;">กรอกชื่อ-นามสกุลของคุณเพื่อเริ่มใช้งานระบบ</p>
+      <label style="font-size:12px;font-weight:600;color:var(--ink2);display:block;margin-bottom:6px;letter-spacing:.3px;">ชื่อ-นามสกุล</label>
+      <input id="reg-name" class="field" type="text" placeholder="เช่น สมชาย ใจดี" maxlength="60" autocomplete="off" autocorrect="off" spellcheck="false" />
+      <button id="btn-register" class="btn btn-primary mt-4">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <span id="btn-register-label">ลงทะเบียน</span>
+      </button>
+      <p id="reg-hint" class="text-center mt-3 min-h-[18px]" style="font-size:12px;color:var(--danger);"></p>
+    </div>
+  </section>
 
-        function showScreen(screenId, data = {}) {
-            app.innerHTML = ""; // Clear current screen
-            let screenHtml = "";
+  <!-- ===== SCREEN: APP ===== -->
+  <main id="screen-app" class="screen hidden max-w-[480px] mx-auto px-5">
 
-            switch (screenId) {
-                case "loading":
-                    screenHtml = `
-                        <div class="text-center py-8">
-                            <h2 class="text-xl font-bold">กำลังโหลด...</h2>
-                            <p class="text-gray-600">กรุณารอสักครู่</p>
-                        </div>
-                    `;
-                    break;
-                case "not-telegram":
-                    screenHtml = `
-                        <div class="text-center py-8">
-                            <h2 class="text-xl font-bold text-red-500">ข้อผิดพลาด</h2>
-                            <p class="text-gray-600">แอปนี้ต้องเปิดผ่าน Telegram Mini App เท่านั้น</p>
-                        </div>
-                    `;
-                    break;
-                case "register":
-                    screenHtml = `
-                        <h2 class="text-2xl font-bold mb-4">ลงทะเบียนพนักงาน</h2>
-                        <p class="mb-4">กรุณากรอกชื่อ-นามสกุลเพื่อลงทะเบียน</p>
-                        <input type="text" id="nameInput" placeholder="ชื่อ-นามสกุล" class="input-field mb-4">
-                        <button id="registerBtn" class="btn btn-green w-full">ลงทะเบียน</button>
-                        <p id="registerError" class="error-message"></p>
-                    `;
-                    break;
-                case "main":
-                    screenHtml = `
-                        <h2 class="text-2xl font-bold mb-4">สวัสดี, ${data.name}</h2>
-                        <p class="text-gray-600 mb-4">สถานะวันนี้: <span id="todayStatusBadge" class="badge"></span></p>
-                        <div class="flex flex-col space-y-4">
-                            <button id="checkInBtn" class="btn btn-green w-full ${data.today_status === 'not_checked_in' ? '' : 'btn-disabled'}" ${data.today_status === 'not_checked_in' ? '' : 'disabled'}>ลงชื่อเข้างาน</button>
-                            <button id="checkOutBtn" class="btn btn-red w-full ${data.today_status === 'checked_in' ? '' : 'btn-disabled'}" ${data.today_status === 'checked_in' ? '' : 'disabled'}>ลงชื่อออกงาน</button>
-                            <button id="leaveBtn" class="btn bg-yellow-500 hover:bg-yellow-700 w-full">แจ้งลา</button>
-                            <button id="historyBtn" class="btn bg-gray-500 hover:bg-gray-700 w-full">ดูประวัติย้อนหลัง</button>
-                        </div>
-                    `;
-                    break;
-                case "camera":
-                    // ใช้ native file input (capture="user") แทน getUserMedia + video/canvas เดิม
-                    // เพราะ getUserMedia พังบ่อยบน Android 13 / Telegram บางเวอร์ชัน
-                    screenHtml = `
-                        <h2 class="text-2xl font-bold mb-4">${data.type === 'checkin' ? 'ถ่ายรูปลงชื่อเข้างาน' : 'ถ่ายรูปลงชื่อออกงาน'}</h2>
-                        <div id="photoPreviewWrap" class="w-full h-64 bg-gray-200 rounded-lg mb-4 flex items-center justify-center overflow-hidden">
-                            <img id="photoPreview" class="hidden w-full h-full object-cover" alt="รูปที่ถ่าย">
-                            <span id="photoPlaceholder" class="text-gray-500">ยังไม่ได้ถ่ายรูป</span>
-                        </div>
-                        <input type="file" accept="image/*" capture="user" id="photoInput" class="visually-hidden-file">
-                        <p id="gpsStatus" class="text-gray-600 mb-4"><span class="badge badge-yellow">กำลังค้นหา GPS...</span></p>
-                        <p id="cameraError" class="error-message"></p>
-                        <button id="takePhotoBtn" class="btn btn-green w-full mb-2">ถ่ายรูป</button>
-                        <button id="submitPhotoBtn" class="btn btn-green w-full mb-2 btn-disabled" disabled>ยืนยันและส่ง</button>
-                        <button id="cancelCameraBtn" class="btn bg-gray-500 hover:bg-gray-700 w-full">ยกเลิก</button>
-                    `;
-                    break;
-                case "summary":
-                    screenHtml = `
-                        <h2 class="text-2xl font-bold mb-4">สรุปผลการลงชื่อ</h2>
-                        <p class="mb-2">ชื่อ: <span class="font-semibold">${data.name || ''}</span></p>
-                        ${data.status ? `<p class="mb-2">สถานะ: <span class="font-semibold">${data.status}</span></p>` : ''}
-                        ${data.time ? `<p class="mb-2">เวลาเข้างาน: <span class="font-semibold">${data.time} น.</span></p>` : ''}
-                        ${data.check_in_time ? `<p class="mb-2">เข้างาน: <span class="font-semibold">${data.check_in_time} น.</span></p>` : ''}
-                        ${data.check_out_time ? `<p class="mb-2">ออกงาน: <span class="font-semibold">${data.check_out_time} น.</span></p>` : ''}
-                        ${typeof data.work_hours === 'number' ? `<p class="mb-2">ชั่วโมงทำงาน: <span class="font-semibold">${data.work_hours.toFixed(2)} ชม.</span></p>` : ''}
-                        <p class="mb-2">พื้นที่: <span class="font-semibold">${data.out_of_area ? 'นอกพื้นที่' : 'ในพื้นที่'}</span>${typeof data.distance_m === 'number' ? ` (${data.distance_m} ม.)` : ''}</p>
-                        ${data.warning ? `<p class="error-message">${data.warning}</p>` : ''}
-                        <button id="backToMainBtn" class="btn btn-green w-full mt-4">กลับหน้าหลัก</button>
-                    `;
-                    break;
-                case "history":
-                    screenHtml = `
-                        <h2 class="text-2xl font-bold mb-4">ประวัติการเข้างาน</h2>
-                        <div class="flex space-x-2 mb-4">
-                            <select id="historyMonth" class="input-field w-1/2"></select>
-                            <select id="historyYear" class="input-field w-1/2"></select>
-                        </div>
-                        <div id="historyList" class="space-y-2"></div>
-                        <button id="backToMainBtn" class="btn bg-gray-500 hover:bg-gray-700 w-full mt-4">กลับหน้าหลัก</button>
-                    `;
-                    break;
-                case "leave-form":
-                    screenHtml = `
-                        <h2 class="text-2xl font-bold mb-4">แจ้งลา</h2>
-                        <div class="mb-4">
-                            <label for="leaveType" class="block text-gray-700 text-sm font-bold mb-2">ประเภทการลา:</label>
-                            <select id="leaveType" class="input-field">
-                                <option value="sick">ลาป่วย</option>
-                                <option value="personal">ลากิจ</option>
-                                <option value="business">ลาพักร้อน</option>
-                            </select>
-                        </div>
-                        <div class="mb-4">
-                            <label for="startDate" class="block text-gray-700 text-sm font-bold mb-2">วันที่เริ่มต้น:</label>
-                            <input type="date" id="startDate" class="input-field">
-                        </div>
-                        <div class="mb-4">
-                            <label for="endDate" class="block text-gray-700 text-sm font-bold mb-2">วันที่สิ้นสุด:</label>
-                            <input type="date" id="endDate" class="input-field">
-                        </div>
-                        <div class="mb-4">
-                            <label for="reason" class="block text-gray-700 text-sm font-bold mb-2">เหตุผล:</label>
-                            <textarea id="reason" class="input-field" rows="3"></textarea>
-                        </div>
-                        <button id="submitLeaveBtn" class="btn btn-green w-full">ส่งคำขอลา</button>
-                        <p id="leaveError" class="error-message"></p>
-                        <button id="cancelLeaveBtn" class="btn bg-gray-500 hover:bg-gray-700 w-full mt-2">ยกเลิก</button>
-                    `;
-                    break;
-            }
-            app.innerHTML = screenHtml;
-            Telegram.WebApp.ready();
-            Telegram.WebApp.expand();
-            attachEventListeners(screenId, data);
-        }
+    <!-- ---- TAB: CHECK-IN ---- -->
+    <section id="tab-checkin" class="py-4">
 
-        function attachEventListeners(screenId, data) {
-            switch (screenId) {
-                case "register":
-                    document.getElementById("registerBtn").addEventListener("click", handleRegister);
-                    break;
-                case "main":
-                    document.getElementById("checkInBtn").addEventListener("click", () => showScreen("camera", { type: "checkin", name: data.name }));
-                    document.getElementById("checkOutBtn").addEventListener("click", () => showScreen("camera", { type: "checkout", name: data.name }));
-                    document.getElementById("leaveBtn").addEventListener("click", () => showScreen("leave-form"));
-                    document.getElementById("historyBtn").addEventListener("click", () => showScreen("history"));
-                    updateTodayStatusBadge(data.today_status);
-                    break;
-                case "camera":
-                    setupCamera(data.type);
-                    document.getElementById("cancelCameraBtn").addEventListener("click", () => checkUserStatus());
-                    break;
-                case "summary":
-                    document.getElementById("backToMainBtn").addEventListener("click", () => checkUserStatus());
-                    break;
-                case "history":
-                    setupHistory();
-                    document.getElementById("backToMainBtn").addEventListener("click", () => checkUserStatus());
-                    break;
-                case "leave-form":
-                    document.getElementById("submitLeaveBtn").addEventListener("click", handleSubmitLeave);
-                    document.getElementById("cancelLeaveBtn").addEventListener("click", () => checkUserStatus());
-                    break;
-            }
-        }
+      <!-- Greeting -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+        <div>
+          <p style="font-size:13px;color:var(--ink3);font-weight:500;">สวัสดี 👋</p>
+          <p style="font-size:18px;font-weight:700;margin-top:2px;" id="emp-name">—</p>
+        </div>
+        <div id="today-badge" style="font-size:11px;font-weight:600;color:var(--ink3);text-align:right;">
+          <span id="today-date">—</span>
+        </div>
+      </div>
 
-        function updateTodayStatusBadge(status) {
-            const badge = document.getElementById("todayStatusBadge");
-            badge.classList.remove("badge-green", "badge-yellow", "badge-red");
-            switch (status) {
-                case "not_checked_in":
-                    badge.textContent = "ยังไม่ลงชื่อเข้างาน";
-                    badge.classList.add("badge-red");
-                    break;
-                case "checked_in":
-                    badge.textContent = "ลงชื่อเข้างานแล้ว";
-                    badge.classList.add("badge-yellow");
-                    break;
-                case "checked_out":
-                    badge.textContent = "ลงชื่อครบแล้ววันนี้";
-                    badge.classList.add("badge-green");
-                    break;
-            }
-        }
+      <!-- Status banner -->
+      <div id="status-banner" class="status-banner info hidden" style="margin-bottom:16px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="flex-shrink:0;"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+        <span id="status-banner-text"></span>
+      </div>
 
-        async function checkUserStatus() {
-            showScreen("loading");
-            if (!Telegram.WebApp.initDataUnsafe || !Telegram.WebApp.initDataUnsafe.user) {
-                showScreen("not-telegram");
-                return;
-            }
+      <!-- Camera -->
+      <div class="camera-wrap" id="camera-wrap">
+        <!-- Live video (getUserMedia) -->
+        <video id="cam-video" autoplay playsinline muted style="display:none;"></video>
+        <!-- Captured preview -->
+        <img id="cam-preview" class="preview-img" style="display:none;" alt="รูปถ่าย" />
+        <!-- Fallback: file input hidden -->
+        <input type="file" id="cam-file" accept="image/*" capture="user" style="display:none;" />
 
-            const telegramUserId = Telegram.WebApp.initDataUnsafe.user.id;
-            try {
-                const response = await fetch(`${API_BASE_URL}/api/me?id=${telegramUserId}`, {
-                    headers: {
-                        "X-Telegram-Init-Data": Telegram.WebApp.initData,
-                    },
-                });
-                const data = await response.json();
+        <!-- Overlay: idle state -->
+        <div id="cam-overlay-idle" class="camera-overlay">
+          <div class="camera-overlay-icon">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.9)" stroke-width="1.8">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+              <circle cx="12" cy="13" r="4"/>
+            </svg>
+          </div>
+          <span class="camera-overlay-text" id="cam-idle-text">กดปุ่มด้านล่างเพื่อเปิดกล้อง</span>
+        </div>
 
-                if (data.registered) {
-                    showScreen("main", { name: data.name, today_status: data.today_status });
-                } else {
-                    showScreen("register");
-                }
-            } catch (e) {
-                console.error("Error checking user status:", e);
-                app.innerHTML = `<div class="text-center py-8"><h2 class="text-xl font-bold text-red-500">เกิดข้อผิดพลาด</h2><p class="text-gray-600">ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้: ${e.message}</p></div>`;
-            }
-        }
+        <!-- Corner guides (shown when live) -->
+        <div class="cam-guide tl" id="cam-guide-tl" style="display:none;"></div>
+        <div class="cam-guide tr" id="cam-guide-tr" style="display:none;"></div>
+        <div class="cam-guide bl" id="cam-guide-bl" style="display:none;"></div>
+        <div class="cam-guide br" id="cam-guide-br" style="display:none;"></div>
 
-        async function handleRegister() {
-            const nameInput = document.getElementById("nameInput");
-            const name = nameInput.value.trim();
-            const registerError = document.getElementById("registerError");
-            registerError.textContent = "";
+        <!-- Status bar (live) -->
+        <div id="cam-status-bar" class="cam-status-bar hidden">
+          <div class="cam-rec-dot"></div>
+          <span class="cam-status-text" id="cam-status-text">กล้องพร้อม</span>
+        </div>
 
-            if (!name) {
-                registerError.textContent = "กรุณากรอกชื่อ-นามสกุล";
-                return;
-            }
+        <!-- Action bar (live) -->
+        <div id="cam-action-bar" class="cam-action-bar hidden">
+          <button class="cam-btn-secondary" id="btn-cam-flip" title="สลับกล้อง" aria-label="สลับกล้อง">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M1 4v6h6M23 20v-6h-6"/>
+              <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+            </svg>
+          </button>
+          <button class="cam-shutter" id="btn-shutter" aria-label="ถ่ายรูป">
+            <div class="cam-shutter-inner"></div>
+          </button>
+          <button class="cam-btn-secondary" id="btn-cam-cancel" title="ยกเลิก" aria-label="ยกเลิก">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
 
-            const telegramUserId = Telegram.WebApp.initDataUnsafe.user.id;
-            try {
-                const response = await fetch(`${API_BASE_URL}/api/register`, {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        "X-Telegram-Init-Data": Telegram.WebApp.initData,
-                    },
-                    body: JSON.stringify({ telegram_user_id: telegramUserId, name }),
-                });
-                const data = await response.json();
+        <!-- Retake bar (after capture) -->
+        <div id="cam-retake-bar" class="retake-bar hidden">
+          <button class="retake-btn" id="btn-retake">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M1 4v6h6M3.51 15a9 9 0 1 0 .49-3"/></svg>
+            ถ่ายใหม่
+          </button>
+          <div class="photo-ok-badge">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            พร้อมส่ง
+          </div>
+        </div>
+      </div>
 
-                if (data.ok) {
-                    checkUserStatus(); // กลับหน้าหลักหลังลงทะเบียนสำเร็จ
-                } else {
-                    registerError.textContent = data.error || "เกิดข้อผิดพลาดในการลงทะเบียน";
-                }
-            } catch (e) {
-                console.error("Error during registration:", e);
-                registerError.textContent = `ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้: ${e.message}`;
-            }
-        }
+      <!-- GPS + Time pills -->
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;">
+        <span id="pill-gps" class="pill searching" role="status" aria-live="polite" style="cursor:pointer;" title="แตะเพื่อรีเฟรช GPS">
+          <span class="dot"></span>
+          <span id="pill-gps-text">GPS: กำลังค้นหา…</span>
+        </span>
+        <span id="pill-time" class="pill">
+          <span class="dot"></span>
+          <span id="pill-time-text">เวลา —</span>
+        </span>
+      </div>
 
-        // ── ถ่ายรูปด้วย native file input (แทน getUserMedia + video/canvas เดิม) ──
-        let currentActionType = null; // 'checkin' หรือ 'checkout'
-        let capturedPhotoBase64 = null; // base64 ดิบ ไม่มี prefix "data:image/...;base64,"
+      <!-- CTA Buttons -->
+      <div style="margin-top:20px;display:flex;flex-direction:column;gap:10px;">
+        <button id="btn-checkin" class="btn btn-primary">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+          <span id="btn-checkin-label">เปิดกล้อง & ลงชื่อเข้างาน</span>
+        </button>
+        <button id="btn-checkout" class="btn btn-danger hidden">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          <span id="btn-checkout-label">เปิดกล้อง & ลงชื่อออกงาน</span>
+        </button>
+      </div>
 
-        function setupCamera(type) {
-            currentActionType = type;
-            capturedPhotoBase64 = null;
+      <p id="checkin-hint" class="text-center mt-3 min-h-[18px]" style="font-size:12px;color:var(--ink3);"></p>
+    </section>
 
-            const photoInput = document.getElementById("photoInput");
-            const takePhotoBtn = document.getElementById("takePhotoBtn");
-            const submitPhotoBtn = document.getElementById("submitPhotoBtn");
+    <!-- ---- TAB: SUMMARY ---- -->
+    <section id="tab-summary" class="py-4 hidden">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+        <p style="font-size:18px;font-weight:700;">สรุปของฉัน</p>
+        <select id="month-select" class="field" style="width:auto;padding:8px 14px;font-size:13px;border-radius:9999px;"></select>
+      </div>
 
-            takePhotoBtn.addEventListener("click", () => photoInput.click());
-            photoInput.addEventListener("change", handlePhotoSelected);
-            submitPhotoBtn.addEventListener("click", submitAttendance);
+      <div class="stat-grid" style="margin-bottom:20px;">
+        <div class="stat-card">
+          <div class="stat-num" id="st-checkins" style="color:var(--primary);">0</div>
+          <div class="stat-label">เข้างาน (ครั้ง)</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="st-ontime" style="color:var(--success);">0</div>
+          <div class="stat-label">ตรงเวลา</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="st-late" style="color:var(--danger);">0</div>
+          <div class="stat-label">มาสาย</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="st-leave" style="color:var(--warn);">0</div>
+          <div class="stat-label">ลา (วัน)</div>
+        </div>
+      </div>
 
-            getGPSLocation();
-        }
+      <p class="section-label">รายการบันทึก</p>
+      <div id="summary-list" class="space-y-2">
+        <div style="text-align:center;padding:32px 0;color:var(--ink3);font-size:13px;">กำลังโหลด…</div>
+      </div>
+    </section>
+  </main>
 
-        function handlePhotoSelected(e) {
-            const cameraError = document.getElementById("cameraError");
-            cameraError.textContent = "";
+  <!-- ===== SCREEN: RESULT ===== -->
+  <section id="screen-result" class="screen hidden max-w-[480px] mx-auto px-5 py-12 text-center">
+    <div id="result-icon" class="result-icon-wrap"></div>
+    <h2 id="result-title" style="font-size:22px;font-weight:700;"></h2>
+    <p id="result-detail" style="font-size:14px;color:var(--ink2);margin-top:8px;line-height:1.6;"></p>
+    <div style="margin-top:28px;display:flex;flex-direction:column;gap:10px;">
+      <button id="btn-back" class="btn btn-primary">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+        กลับหน้าหลัก
+      </button>
+    </div>
+  </section>
 
-            const file = e.target.files && e.target.files[0];
-            if (!file) return;
+  <!-- ===== BOTTOM NAV ===== -->
+  <nav id="bottom-nav" class="bottom-nav hidden" role="navigation" aria-label="เมนูหลัก">
+    <div class="bottom-nav-inner">
+      <button data-tab="checkin" class="nav-btn active" aria-label="ลงชื่อเข้างาน">
+        <div class="nav-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="4" width="18" height="14" rx="2"/>
+            <circle cx="12" cy="11" r="3"/>
+          </svg>
+        </div>
+        <span class="nav-pill">เช็คอิน</span>
+      </button>
+      <button data-tab="summary" class="nav-btn" aria-label="สรุปของฉัน">
+        <div class="nav-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/>
+          </svg>
+        </div>
+        <span class="nav-pill">สรุป</span>
+      </button>
+    </div>
+  </nav>
 
-            if (file.size > 8 * 1024 * 1024) {
-                cameraError.textContent = "ไฟล์รูปภาพใหญ่เกินไป กรุณาลองถ่ายใหม่";
-                return;
-            }
+<script>
+/* ================================================================
+   ⚙️  CONFIG
+   ================================================================ */
+const API_BASE = "https://face-attendance-api.facetime.workers.dev";
 
-            const reader = new FileReader();
-            reader.onload = () => {
-                const dataUrl = reader.result;
-                capturedPhotoBase64 = dataUrl.split(",")[1] || null;
+/* ================================================================
+   TELEGRAM INIT
+   ================================================================ */
+const tg = window.Telegram?.WebApp ?? null;
+if (tg) { tg.expand(); tg.ready(); tg.enableClosingConfirmation?.(); }
+const TELEGRAM_USER_ID = tg?.initDataUnsafe?.user?.id ? String(tg.initDataUnsafe.user.id) : null;
+const INIT_DATA = tg?.initData ?? "";
 
-                const preview = document.getElementById("photoPreview");
-                const placeholder = document.getElementById("photoPlaceholder");
-                preview.src = dataUrl;
-                preview.classList.remove("hidden");
-                placeholder.classList.add("hidden");
+/* ================================================================
+   UTILITIES
+   ================================================================ */
+const $ = (id) => document.getElementById(id);
 
-                const submitBtn = document.getElementById("submitPhotoBtn");
-                submitBtn.disabled = false;
-                submitBtn.classList.remove("btn-disabled");
-            };
-            reader.onerror = () => {
-                cameraError.textContent = "ไม่สามารถอ่านไฟล์รูปภาพได้ กรุณาลองใหม่";
-            };
-            reader.readAsDataURL(file);
-        }
+// Toast notification
+let _toastTimer = null;
+function toast(msg, duration = 2800) {
+  const el = $("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => el.classList.remove("show"), duration);
+}
 
-        let currentGpsLat = null;
-        let currentGpsLon = null;
+// Screen manager
+const SCREENS = ["loading", "register", "app", "result"];
+function showScreen(name) {
+  SCREENS.forEach(s => {
+    const el = $("screen-" + s);
+    if (el) el.classList.toggle("hidden", s !== name);
+  });
+  $("bottom-nav").classList.toggle("hidden", name !== "app");
+}
 
-        function getGPSLocation() {
-            const gpsStatus = document.getElementById("gpsStatus");
-            gpsStatus.innerHTML = `<span class="badge badge-yellow">กำลังค้นหา GPS...</span>`;
+// API wrapper with retry
+async function api(path, { method = "POST", body, retries = 2 } = {}) {
+  const opts = {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      "X-Telegram-Init-Data": INIT_DATA,
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  };
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(API_BASE + path, opts);
+      if (!res.ok && attempt < retries) continue;
+      return await res.json();
+    } catch (err) {
+      if (attempt === retries) throw err;
+      await new Promise(r => setTimeout(r, 800 * (attempt + 1)));
+    }
+  }
+}
 
-            navigator.geolocation.getCurrentPosition(
-                (position) => {
-                    currentGpsLat = position.coords.latitude;
-                    currentGpsLon = position.coords.longitude;
-                    gpsStatus.innerHTML = `<span class="badge badge-green">GPS พร้อมใช้งาน</span>`;
-                },
-                (error) => {
-                    console.error("GPS error:", error);
-                    currentGpsLat = null;
-                    currentGpsLon = null;
-                    // backend บังคับต้องมีพิกัด GPS เสมอ จึงไม่ให้ข้ามขั้นตอนนี้ได้เหมือนเดิม
-                    gpsStatus.innerHTML = `<span class="badge badge-red">ไม่พบ GPS (${error.message}) — กรุณาเปิดสัญญาณ GPS แล้วลองใหม่</span>`;
-                },
-                { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-            );
-        }
+// Date formatting
+function fmtDate(iso) {
+  const [y, m, d] = iso.slice(0, 10).split("-");
+  return `${d}/${m}/${y}`;
+}
+function todayISO() {
+  const n = new Date();
+  return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}-${String(n.getDate()).padStart(2,"0")}`;
+}
 
-        async function submitAttendance() {
-            const cameraError = document.getElementById("cameraError");
-            cameraError.textContent = "";
+/* ================================================================
+   STATE
+   ================================================================ */
+let todayStatus = "not_checked_in"; // not_checked_in | checked_in | checked_out
+let empName = "";
 
-            if (!capturedPhotoBase64) {
-                cameraError.textContent = "กรุณาถ่ายรูปก่อน";
-                return;
-            }
-            if (currentGpsLat == null || currentGpsLon == null) {
-                cameraError.textContent = "ไม่มีพิกัด GPS กรุณาเปิดสัญญาณ GPS แล้วลองใหม่";
-                getGPSLocation();
-                return;
-            }
+/* ================================================================
+   CLOCK
+   ================================================================ */
+function startClock() {
+  const pad = x => String(x).padStart(2, "0");
+  const TH_DAYS = ["อา.","จ.","อ.","พ.","พฤ.","ศ.","ส."];
+  const TH_MONTHS = ["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
+  function tick() {
+    const n = new Date();
+    $("clock").textContent = `${pad(n.getHours())}:${pad(n.getMinutes())}:${pad(n.getSeconds())}`;
+    setPill("pill-gps", null, null, null); // keep GPS pill
+    $("pill-time-text").textContent = `เวลา ${pad(n.getHours())}:${pad(n.getMinutes())} น.`;
+    $("pill-time").classList.add("ok");
+    $("pill-time").querySelector(".dot").style.background = "";
+    $("today-date").textContent = `${TH_DAYS[n.getDay()]} ${n.getDate()} ${TH_MONTHS[n.getMonth()]} ${n.getFullYear()+543}`;
+  }
+  tick();
+  setInterval(tick, 1000);
+}
 
-            const submitBtn = document.getElementById("submitPhotoBtn");
-            submitBtn.disabled = true;
-            submitBtn.textContent = "กำลังส่ง...";
+/* ================================================================
+   GPS  — watchPosition (เสถียรกว่า polling interval)
+   ================================================================ */
+let gps = null;           // { lat, lon, accuracy }
+let gpsWatchId = null;
+let gpsRetryTimer = null;
+let gpsFirstFix = false;
 
-            const telegramUserId = Telegram.WebApp.initDataUnsafe.user.id;
-            const endpoint = currentActionType === "checkin" ? "/api/checkin" : "/api/checkout";
+function setPillGPS(state, text) {
+  const el = $("pill-gps");
+  el.className = "pill " + (state || "searching");
+  $("pill-gps-text").textContent = text;
+}
 
-            try {
-                const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        "X-Telegram-Init-Data": Telegram.WebApp.initData,
-                    },
-                    body: JSON.stringify({
-                        telegram_user_id: telegramUserId,
-                        photo_base64: capturedPhotoBase64,
-                        gps_lat: currentGpsLat,
-                        gps_lon: currentGpsLon,
-                    }),
-                });
-                const data = await response.json();
+function startGPS() {
+  if (!navigator.geolocation) {
+    setPillGPS("err", "GPS: ไม่รองรับ");
+    return;
+  }
+  gpsFirstFix = false;
+  setPillGPS("searching", "GPS: กำลังค้นหา…");
+  _startWatch();
+}
 
-                if (data.ok) {
-                    showScreen("summary", data);
-                } else {
-                    alert(data.error || "เกิดข้อผิดพลาดในการลงชื่อ");
-                    checkUserStatus();
-                }
-            } catch (e) {
-                console.error("Error during checkin/checkout:", e);
-                alert(`ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้: ${e.message}`);
-                checkUserStatus();
-            }
-        }
+function _startWatch() {
+  if (gpsWatchId !== null) {
+    navigator.geolocation.clearWatch(gpsWatchId);
+    gpsWatchId = null;
+  }
+  gpsWatchId = navigator.geolocation.watchPosition(
+    _onGPSSuccess,
+    _onGPSError,
+    {
+      enableHighAccuracy: true,
+      timeout: 15000,
+      maximumAge: 10000,
+    }
+  );
+}
 
-        async function setupHistory() {
-            const historyMonthSelect = document.getElementById("historyMonth");
-            const historyYearSelect = document.getElementById("historyYear");
-            const historyList = document.getElementById("historyList");
+function _onGPSSuccess(pos) {
+  clearTimeout(gpsRetryTimer);
+  gps = {
+    lat: pos.coords.latitude,
+    lon: pos.coords.longitude,
+    accuracy: Math.round(pos.coords.accuracy),
+  };
+  gpsFirstFix = true;
+  const accText = gps.accuracy <= 20 ? "" : ` ±${gps.accuracy}ม.`;
+  setPillGPS("ok", `GPS: ${gps.lat.toFixed(4)}, ${gps.lon.toFixed(4)}${accText}`);
+}
 
-            const currentYear = new Date().getFullYear();
-            for (let i = 0; i < 5; i++) { // ย้อนหลัง 5 ปี
-                const year = currentYear - i;
-                const option = document.createElement("option");
-                option.value = year;
-                option.textContent = year;
-                historyYearSelect.appendChild(option);
-            }
+function _onGPSError(err) {
+  const msgs = { 1: "ไม่ได้รับอนุญาต", 2: "ไม่สามารถระบุตำแหน่ง", 3: "หมดเวลา" };
+  const msg = msgs[err.code] || "ไม่สำเร็จ";
 
-            for (let i = 1; i <= 12; i++) {
-                const option = document.createElement("option");
-                option.value = i;
-                option.textContent = new Date(0, i - 1).toLocaleString("th-TH", { month: "long" });
-                historyMonthSelect.appendChild(option);
-            }
+  if (err.code === 1) {
+    // Permission denied — stop retrying
+    setPillGPS("err", `GPS: ${msg} — กรุณาอนุญาตใน Settings`);
+    stopGPS();
+    return;
+  }
 
-            historyYearSelect.value = currentYear;
-            historyMonthSelect.value = new Date().getMonth() + 1;
+  if (!gps) {
+    // No fix yet — show error but keep trying
+    setPillGPS("err", `GPS: ${msg} — กำลังลองใหม่…`);
+  }
+  // Retry after delay (timeout/unavailable)
+  clearTimeout(gpsRetryTimer);
+  gpsRetryTimer = setTimeout(() => {
+    if (todayStatus !== "checked_out") _startWatch();
+  }, 5000);
+}
 
-            const fetchHistory = async () => {
-                historyList.innerHTML = "<p class=\"text-center text-gray-500\">กำลังโหลดประวัติ...</p>";
-                const telegramUserId = Telegram.WebApp.initDataUnsafe.user.id;
-                const year = historyYearSelect.value;
-                const month = historyMonthSelect.value;
+function stopGPS() {
+  if (gpsWatchId !== null) {
+    navigator.geolocation.clearWatch(gpsWatchId);
+    gpsWatchId = null;
+  }
+  clearTimeout(gpsRetryTimer);
+}
 
-                try {
-                    const response = await fetch(`${API_BASE_URL}/api/my-attendance?id=${telegramUserId}&year=${year}&month=${month}`, {
-                        headers: {
-                            "X-Telegram-Init-Data": Telegram.WebApp.initData,
-                        },
-                    });
-                    const data = await response.json();
+// Manual refresh on tap
+$("pill-gps").addEventListener("click", () => {
+  if (todayStatus === "checked_out") return;
+  gps = null;
+  stopGPS();
+  startGPS();
+  toast("รีเฟรช GPS…");
+});
 
-                    if (data.ok) {
-                        historyList.innerHTML = "";
+// Resume GPS when app comes back to foreground
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && todayStatus !== "checked_out" && gpsWatchId === null) {
+    startGPS();
+  }
+});
 
-                        if (data.summary) {
-                            const summaryEl = document.createElement("div");
-                            summaryEl.className = "p-3 border rounded-lg bg-blue-50";
-                            summaryEl.innerHTML = `
-                                <p class="font-semibold">สรุปเดือนนี้</p>
-                                <p>เข้างาน ${data.summary.checkins} วัน (ตรงเวลา ${data.summary.on_time} / สาย ${data.summary.late})</p>
-                                <p>ลา ${data.summary.leave_count} ครั้ง (${data.summary.leave_days} วัน)</p>
-                            `;
-                            historyList.appendChild(summaryEl);
-                        }
+/* ================================================================
+   CAMERA  — getUserMedia first, fallback to input[capture]
+   ================================================================ */
+let camStream = null;
+let camFacingMode = "user"; // "user" | "environment"
+let capturedBase64 = null;
+let pendingAction = null;   // "checkin" | "checkout"
+let camMode = "idle";       // "idle" | "live" | "captured" | "done"
 
-                        const logs = data.logs || [];
-                        const leaves = data.leaves || [];
+function _showCamState(state) {
+  camMode = state;
+  const video     = $("cam-video");
+  const preview   = $("cam-preview");
+  const overlayIdle = $("cam-overlay-idle");
+  const statusBar = $("cam-status-bar");
+  const actionBar = $("cam-action-bar");
+  const retakeBar = $("cam-retake-bar");
+  const guides    = ["cam-guide-tl","cam-guide-tr","cam-guide-bl","cam-guide-br"];
 
-                        if (logs.length === 0 && leaves.length === 0) {
-                            const emptyEl = document.createElement("p");
-                            emptyEl.className = "text-center text-gray-500";
-                            emptyEl.textContent = "ไม่พบข้อมูลในเดือนนี้";
-                            historyList.appendChild(emptyEl);
-                            return;
-                        }
+  // Reset
+  video.style.display = "none";
+  preview.style.display = "none";
+  overlayIdle.classList.remove("hidden");
+  statusBar.classList.add("hidden");
+  actionBar.classList.add("hidden");
+  retakeBar.classList.add("hidden");
+  guides.forEach(g => $("cam-guide-" + g.split("-").slice(2).join("-")) && ($("cam-guide-" + g.split("-").slice(2).join("-")).style.display = "none"));
+  guides.forEach(g => { const el = $(g); if (el) el.style.display = "none"; });
 
-                        logs.forEach(log => {
-                            const d = new Date(log.time);
-                            const dateStr = d.toLocaleString('en-CA', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' });
-                            const timeStr = d.toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' });
-                            const logElement = document.createElement("div");
-                            logElement.className = "p-3 border rounded-lg bg-gray-50";
-                            logElement.innerHTML = `
-                                <p class="font-semibold">${dateStr}</p>
-                                <p>เข้างาน: ${timeStr} (${log.status})</p>
-                                <p>ระยะจากออฟฟิศ: ${log.distance_m} ม.</p>
-                            `;
-                            historyList.appendChild(logElement);
-                        });
+  if (state === "live") {
+    video.style.display = "block";
+    overlayIdle.classList.add("hidden");
+    statusBar.classList.remove("hidden");
+    actionBar.classList.remove("hidden");
+    guides.forEach(g => { const el = $(g); if (el) el.style.display = "block"; });
+  } else if (state === "captured") {
+    preview.style.display = "block";
+    overlayIdle.classList.add("hidden");
+    retakeBar.classList.remove("hidden");
+  } else if (state === "done") {
+    overlayIdle.classList.remove("hidden");
+    $("cam-idle-text").textContent = "จบการทำงานวันนี้แล้ว";
+  } else {
+    // idle
+    $("cam-idle-text").textContent = "กดปุ่มด้านล่างเพื่อเปิดกล้อง";
+  }
+}
 
-                        leaves.forEach(leave => {
-                            const leaveElement = document.createElement("div");
-                            leaveElement.className = "p-3 border rounded-lg bg-yellow-50";
-                            leaveElement.innerHTML = `
-                                <p class="font-semibold">ลา: ${leave.start} ถึง ${leave.end}</p>
-                                <p>ประเภท: ${leave.type}</p>
-                            `;
-                            historyList.appendChild(leaveElement);
-                        });
+async function openCamera(action) {
+  pendingAction = action;
+  capturedBase64 = null;
 
-                    } else {
-                        historyList.innerHTML = `<p class="error-message text-center">${data.error || "เกิดข้อผิดพลาดในการดึงประวัติ"}</p>`;
-                    }
-                } catch (e) {
-                    console.error("Error fetching history:", e);
-                    historyList.innerHTML = `<p class="error-message text-center">ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้: ${e.message}</p>`;
-                }
-            };
+  // Try getUserMedia (live camera in browser)
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    try {
+      await _startLiveCamera();
+      return; // success
+    } catch (err) {
+      console.warn("getUserMedia failed:", err.name, err.message);
+      // Fall through to file input
+    }
+  }
+  // Fallback: native camera via file input
+  _openFileInput();
+}
 
-            historyMonthSelect.addEventListener("change", fetchHistory);
-            historyYearSelect.addEventListener("change", fetchHistory);
+async function _startLiveCamera() {
+  // Stop previous stream
+  _stopLiveCamera();
 
-            fetchHistory();
-        }
+  const constraints = {
+    video: {
+      facingMode: camFacingMode,
+      width: { ideal: 1280 },
+      height: { ideal: 960 },
+    },
+    audio: false,
+  };
 
-        async function handleSubmitLeave() {
-            const leaveType = document.getElementById("leaveType").value;
-            const startDate = document.getElementById("startDate").value;
-            const endDate = document.getElementById("endDate").value;
-            const reason = document.getElementById("reason").value;
-            const leaveError = document.getElementById("leaveError");
-            leaveError.textContent = "";
+  camStream = await navigator.mediaDevices.getUserMedia(constraints);
+  const video = $("cam-video");
+  video.srcObject = camStream;
+  await video.play();
+  _showCamState("live");
+  $("cam-status-text").textContent = "กล้องพร้อม — กดปุ่มกลมเพื่อถ่ายรูป";
+}
 
-            if (!leaveType || !startDate || !endDate) {
-                leaveError.textContent = "กรุณากรอกข้อมูลให้ครบถ้วน";
-                return;
-            }
+function _stopLiveCamera() {
+  if (camStream) {
+    camStream.getTracks().forEach(t => t.stop());
+    camStream = null;
+  }
+  const video = $("cam-video");
+  video.srcObject = null;
+}
 
-            if (new Date(startDate) > new Date(endDate)) {
-                leaveError.textContent = "วันที่เริ่มต้นต้องไม่เกินวันที่สิ้นสุด";
-                return;
-            }
+function _openFileInput() {
+  // Must be called synchronously within user gesture
+  $("cam-file").value = "";
+  $("cam-file").click();
+}
 
-            const telegramUserId = Telegram.WebApp.initDataUnsafe.user.id;
-            try {
-                const response = await fetch(`${API_BASE_URL}/api/leave`, {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        "X-Telegram-Init-Data": Telegram.WebApp.initData,
-                    },
-                    body: JSON.stringify({ telegram_user_id: telegramUserId, leave_type: leaveType, start_date: startDate, end_date: endDate, reason }),
-                });
-                const data = await response.json();
+// Shutter button — capture frame from live video
+$("btn-shutter").addEventListener("click", () => {
+  const video = $("cam-video");
+  if (!video.videoWidth) { toast("กล้องยังไม่พร้อม"); return; }
 
-                if (data.ok) {
-                    alert("ส่งคำขอลาสำเร็จ");
-                    checkUserStatus();
-                } else {
-                    leaveError.textContent = data.error || "เกิดข้อผิดพลาดในการส่งคำขอลา";
-                }
-            } catch (e) {
-                console.error("Error submitting leave request:", e);
-                leaveError.textContent = `ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้: ${e.message}`;
-            }
-        }
+  const canvas = document.createElement("canvas");
+  canvas.width  = video.videoWidth;
+  canvas.height = video.videoHeight;
+  const ctx = canvas.getContext("2d");
 
-        // เริ่มตรวจสอบสถานะผู้ใช้ทันทีที่เปิดแอป
-        checkUserStatus();
-    </script>
+  // Mirror if front camera
+  if (camFacingMode === "user") {
+    ctx.translate(canvas.width, 0);
+    ctx.scale(-1, 1);
+  }
+  ctx.drawImage(video, 0, 0);
+
+  capturedBase64 = canvas.toDataURL("image/jpeg", 0.88).split(",")[1];
+  $("cam-preview").src = canvas.toDataURL("image/jpeg", 0.88);
+  _stopLiveCamera();
+  _showCamState("captured");
+
+  // Auto-submit
+  const action = pendingAction;
+  pendingAction = null;
+  if (action) submitAttendance(action);
+});
+
+// Flip camera
+$("btn-cam-flip").addEventListener("click", async () => {
+  camFacingMode = camFacingMode === "user" ? "environment" : "user";
+  try {
+    await _startLiveCamera();
+  } catch (e) {
+    toast("ไม่สามารถสลับกล้องได้");
+    camFacingMode = camFacingMode === "user" ? "environment" : "user";
+  }
+});
+
+// Cancel camera
+$("btn-cam-cancel").addEventListener("click", () => {
+  _stopLiveCamera();
+  pendingAction = null;
+  capturedBase64 = null;
+  _showCamState("idle");
+});
+
+// Retake
+$("btn-retake").addEventListener("click", () => {
+  capturedBase64 = null;
+  $("cam-preview").src = "";
+  $("cam-preview").style.display = "none";
+  if (pendingAction === null) pendingAction = todayStatus === "not_checked_in" ? "checkin" : "checkout";
+  openCamera(pendingAction);
+});
+
+// File input fallback handler
+$("cam-file").addEventListener("change", (e) => {
+  const file = e.target.files?.[0];
+  if (!file) { pendingAction = null; return; }
+
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    capturedBase64 = ev.target.result.split(",")[1];
+    $("cam-preview").src = ev.target.result;
+    _showCamState("captured");
+    const action = pendingAction;
+    pendingAction = null;
+    if (action) submitAttendance(action);
+  };
+  reader.onerror = () => {
+    toast("อ่านรูปภาพไม่สำเร็จ กรุณาลองใหม่");
+    pendingAction = null;
+  };
+  reader.readAsDataURL(file);
+  e.target.value = "";
+});
+
+/* ================================================================
+   CHECK-IN / CHECK-OUT STATE
+   ================================================================ */
+function applyCheckinState() {
+  const btnIn  = $("btn-checkin");
+  const btnOut = $("btn-checkout");
+  const banner = $("status-banner");
+  const bannerText = $("status-banner-text");
+
+  if (todayStatus === "not_checked_in") {
+    btnIn.classList.remove("hidden");  btnIn.disabled = false;
+    btnOut.classList.add("hidden");
+    banner.classList.add("hidden");
+    _showCamState("idle");
+
+  } else if (todayStatus === "checked_in") {
+    btnIn.classList.add("hidden");
+    btnOut.classList.remove("hidden"); btnOut.disabled = false;
+    banner.className = "status-banner info";
+    bannerText.textContent = "คุณลงชื่อเข้างานวันนี้แล้ว — ถ่ายรูปเมื่อจะออกงาน";
+    banner.classList.remove("hidden");
+    _showCamState("idle");
+
+  } else { // checked_out
+    btnIn.classList.add("hidden");
+    btnOut.classList.add("hidden");
+    banner.className = "status-banner success";
+    bannerText.textContent = "✅ วันนี้คุณลงชื่อเข้า-ออกงานครบแล้ว ขอบคุณค่ะ";
+    banner.classList.remove("hidden");
+    _showCamState("done");
+    stopGPS();
+  }
+}
+
+/* ================================================================
+   SUBMIT ATTENDANCE
+   ================================================================ */
+async function submitAttendance(action) {
+  const isCheckin = action === "checkin";
+  const btn   = $(isCheckin ? "btn-checkin" : "btn-checkout");
+  const label = $(isCheckin ? "btn-checkin-label" : "btn-checkout-label");
+  const origLabel = label.textContent;
+
+  btn.disabled = true;
+  label.innerHTML = '<span class="spin"></span> กำลังบันทึก…';
+
+  // Ensure GPS — wait up to 6s if no fix yet
+  if (!gps) {
+    $("checkin-hint").textContent = "รอ GPS…";
+    await new Promise(resolve => {
+      let waited = 0;
+      const check = setInterval(() => {
+        waited += 300;
+        if (gps || waited >= 6000) { clearInterval(check); resolve(); }
+      }, 300);
+    });
+  }
+  $("checkin-hint").textContent = "";
+
+  try {
+    const endpoint = isCheckin ? "/api/checkin" : "/api/checkout";
+    const res = await api(endpoint, {
+      body: {
+        telegram_user_id: TELEGRAM_USER_ID,
+        photo_base64: capturedBase64 ?? null,
+        gps_lat: gps?.lat ?? null,
+        gps_lon: gps?.lon ?? null,
+        gps_accuracy: gps?.accuracy ?? null,
+      },
+    });
+
+    if (isCheckin) {
+      if (res.ok) todayStatus = "checked_in";
+      showResult(res.ok,
+        res.ok
+          ? { title: "ลงชื่อเข้างานสำเร็จ ✅", detail: `${res.name} • ${res.time} น. • ${res.status}` }
+          : { title: "ลงชื่อไม่สำเร็จ", detail: res.error || "กรุณาลองใหม่อีกครั้ง" }
+      );
+    } else {
+      if (res.ok) todayStatus = "checked_out";
+      showResult(res.ok,
+        res.ok
+          ? { title: "ลงชื่อออกงานสำเร็จ ✅", detail: `${res.name} • เข้า ${res.check_in_time} → ออก ${res.check_out_time} น. • ทำงาน ${Number(res.work_hours).toFixed(1)} ชม.` }
+          : { title: "ลงชื่อไม่สำเร็จ", detail: res.error || "กรุณาลองใหม่อีกครั้ง" }
+      );
+    }
+  } catch (e) {
+    showResult(false, { title: "เชื่อมต่อไม่สำเร็จ", detail: "กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่" });
+  } finally {
+    capturedBase64 = null;
+    btn.disabled = false;
+    label.textContent = origLabel;
+    applyCheckinState();
+  }
+}
+
+// CTA button handlers — open camera first
+$("btn-checkin").addEventListener("click", () => openCamera("checkin"));
+$("btn-checkout").addEventListener("click", () => openCamera("checkout"));
+
+/* ================================================================
+   RESULT SCREEN
+   ================================================================ */
+function showResult(ok, { title, detail }) {
+  const icon = $("result-icon");
+  if (ok) {
+    icon.style.background = "var(--success-l)";
+    icon.textContent = "✅";
+  } else {
+    icon.style.background = "var(--danger-l)";
+    icon.textContent = "⚠️";
+  }
+  $("result-title").textContent = title;
+  $("result-detail").textContent = detail;
+  showScreen("result");
+}
+
+$("btn-back").addEventListener("click", () => {
+  showScreen("app");
+  applyCheckinState();
+  if (todayStatus !== "checked_out" && gpsWatchId === null) startGPS();
+});
+
+/* ================================================================
+   REGISTER
+   ================================================================ */
+$("btn-register").addEventListener("click", async () => {
+  const name = $("reg-name").value.trim();
+  if (!name) {
+    $("reg-hint").textContent = "กรุณากรอกชื่อ-นามสกุล";
+    $("reg-name").focus();
+    return;
+  }
+  const btn = $("btn-register");
+  const label = $("btn-register-label");
+  btn.disabled = true;
+  label.innerHTML = '<span class="spin"></span> กำลังบันทึก…';
+  $("reg-hint").textContent = "";
+
+  try {
+    const res = await api("/api/register", {
+      body: { telegram_user_id: TELEGRAM_USER_ID, name },
+    });
+    if (res.ok) {
+      empName = name;
+      $("emp-name").textContent = name;
+      todayStatus = "not_checked_in";
+      showScreen("app");
+      startClock();
+      applyCheckinState();
+      startGPS();
+    } else {
+      $("reg-hint").textContent = res.error || "ลงทะเบียนไม่สำเร็จ กรุณาลองใหม่";
+      btn.disabled = false;
+      label.textContent = "ลงทะเบียน";
+    }
+  } catch (e) {
+    $("reg-hint").textContent = "เชื่อมต่อไม่สำเร็จ กรุณาลองใหม่";
+    btn.disabled = false;
+    label.textContent = "ลงทะเบียน";
+  }
+});
+
+$("reg-name").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") $("btn-register").click();
+});
+
+/* ================================================================
+   BOTTOM NAV TABS
+   ================================================================ */
+const TABS = ["checkin", "summary"];
+document.querySelectorAll(".nav-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const tab = btn.dataset.tab;
+    TABS.forEach(t => {
+      $("tab-" + t).classList.toggle("hidden", t !== tab);
+      document.querySelector(`.nav-btn[data-tab="${t}"]`).classList.toggle("active", t === tab);
+    });
+    if (tab === "summary") loadSummary();
+  });
+});
+
+/* ================================================================
+   SUMMARY TAB
+   ================================================================ */
+// Build month dropdown
+(() => {
+  const sel = $("month-select");
+  const now = new Date();
+  const TH = ["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const v = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+    const opt = document.createElement("option");
+    opt.value = v;
+    opt.textContent = `${TH[d.getMonth()]} ${d.getFullYear()+543}`;
+    if (i === 0) opt.selected = true;
+    sel.appendChild(opt);
+  }
+})();
+$("month-select").addEventListener("change", loadSummary);
+
+async function loadSummary() {
+  const [year, month] = $("month-select").value.split("-").map(Number);
+  $("summary-list").innerHTML = `<div style="text-align:center;padding:32px 0;color:var(--ink3);font-size:13px;"><span class="spin spin-dark" style="width:20px;height:20px;border-width:2px;display:inline-block;"></span></div>`;
+
+  try {
+    const res = await api(
+      `/api/my-attendance?id=${encodeURIComponent(TELEGRAM_USER_ID)}&year=${year}&month=${month}`,
+      { method: "GET" }
+    );
+    if (!res.ok) {
+      $("summary-list").innerHTML = `<div style="text-align:center;padding:32px 0;color:var(--danger);font-size:13px;">${res.error || "ดึงข้อมูลไม่สำเร็จ"}</div>`;
+      return;
+    }
+
+    $("st-checkins").textContent = res.summary.checkins;
+    $("st-ontime").textContent   = res.summary.on_time;
+    $("st-late").textContent     = res.summary.late;
+    $("st-leave").textContent    = res.summary.leave_days;
+
+    const items = [];
+    (res.logs || []).forEach(l => items.push({
+      d: l.time.slice(0, 10),
+      time: l.time.slice(11, 16),
+      label: l.status,
+      ok: l.status === "ตรงเวลา",
+    }));
+    (res.leaves || []).forEach(lv => items.push({
+      d: lv.start,
+      range: lv.start !== lv.end ? `${lv.start} → ${lv.end}` : lv.start,
+      label: lv.type,
+      leave: true,
+    }));
+    items.sort((a, b) => (b.d + (b.time || "")).localeCompare(a.d + (a.time || "")));
+
+    if (!items.length) {
+      $("summary-list").innerHTML = `<div style="text-align:center;padding:40px 0;color:var(--ink3);font-size:13px;">ยังไม่มีบันทึกในเดือนนี้</div>`;
+      return;
+    }
+
+    $("summary-list").innerHTML = items.map(it => `
+      <div class="row-item">
+        <div>
+          <p style="font-size:14px;font-weight:600;">${fmtDate(it.d)}</p>
+          <p style="font-size:11px;color:var(--ink3);margin-top:2px;">${it.range || "เวลา " + (it.time || "") + " น."}</p>
+        </div>
+        <span class="pill ${it.leave ? "warn" : it.ok ? "ok" : "err"}">
+          <span class="dot"></span>${it.label}
+        </span>
+      </div>`).join("");
+  } catch (e) {
+    $("summary-list").innerHTML = `<div style="text-align:center;padding:32px 0;color:var(--danger);font-size:13px;">เชื่อมต่อไม่สำเร็จ</div>`;
+  }
+}
+
+/* ================================================================
+   BOOT
+   ================================================================ */
+async function boot() {
+  if (!TELEGRAM_USER_ID) {
+    $("screen-loading").innerHTML = `
+      <div style="text-align:center;padding:40px 20px;">
+        <div style="font-size:40px;margin-bottom:16px;">⚠️</div>
+        <p style="font-size:16px;font-weight:600;color:var(--ink);">กรุณาเปิดผ่าน Telegram</p>
+        <p style="font-size:13px;color:var(--ink3);margin-top:8px;">แอปนี้ต้องเปิดผ่าน Telegram เท่านั้น</p>
+      </div>`;
+    return;
+  }
+
+  try {
+    const res = await api(`/api/me?id=${encodeURIComponent(TELEGRAM_USER_ID)}`, { method: "GET" });
+    if (res.registered) {
+      empName = res.name;
+      $("emp-name").textContent = res.name;
+      todayStatus = res.today_status || "not_checked_in";
+      showScreen("app");
+      startClock();
+      applyCheckinState();
+      if (todayStatus !== "checked_out") startGPS();
+    } else {
+      showScreen("register");
+    }
+  } catch (e) {
+    // Show register screen with error hint
+    showScreen("register");
+    $("reg-hint").textContent = "⚠️ เชื่อมต่อ server ไม่สำเร็จ — กรุณาลองใหม่";
+  }
+}
+
+boot();
+</script>
 </body>
 </html>
