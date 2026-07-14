@@ -650,7 +650,9 @@ function showScreen(name) {
 }
 
 // API wrapper with retry
-async function api(path, { method = "POST", body, retries = 2 } = {}) {
+// แก้: เดิมถ้า response ไม่ throw แต่ไม่ ok จะ retry ทันทีไม่มีหน่วงเวลาเลย ซึ่งช่วย
+// transient error (เช่น เครือข่ายเพิ่งเปิด/cold start) ไม่ได้จริง — เพิ่ม backoff ให้ทุก retry
+async function api(path, { method = "POST", body, retries = 3 } = {}) {
   const opts = {
     method,
     headers: {
@@ -662,11 +664,14 @@ async function api(path, { method = "POST", body, retries = 2 } = {}) {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       const res = await fetch(API_BASE + path, opts);
-      if (!res.ok && attempt < retries) continue;
+      if (!res.ok && attempt < retries) {
+        await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+        continue;
+      }
       return await res.json();
     } catch (err) {
       if (attempt === retries) throw err;
-      await new Promise(r => setTimeout(r, 800 * (attempt + 1)));
+      await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
     }
   }
 }
@@ -1244,7 +1249,7 @@ async function loadSummary() {
 /* ================================================================
    BOOT
    ================================================================ */
-async function boot() {
+async function boot(isRetry = false) {
   if (!TELEGRAM_USER_ID) {
     $("screen-loading").innerHTML = `
       <div style="text-align:center;padding:40px 20px;">
@@ -1255,8 +1260,14 @@ async function boot() {
     return;
   }
 
+  // หน่วงสั้นๆ เฉพาะตอนเปิดแอปครั้งแรก (ไม่ใช่ตอนกด "ลองอีกครั้ง") — WebView ของ Telegram
+  // บางเครื่อง/บางเวอร์ชัน เครือข่ายยังไม่พร้อมทันทีตอนหน้าเว็บเพิ่งโหลดเสร็จ ทำให้ fetch
+  // ครั้งแรกสุดพังทั้งที่เครื่องต่อเน็ตอยู่ปกติ (อาการ: ทุกครั้งที่เปิดแอปใหม่ขึ้น error
+  // แต่พอลองใหม่/เปิดซ้ำกลับใช้ได้)
+  if (!isRetry) await new Promise(r => setTimeout(r, 300));
+
   try {
-    const res = await api(`/api/me?id=${encodeURIComponent(TELEGRAM_USER_ID)}`, { method: "GET" });
+    const res = await api(`/api/me?id=${encodeURIComponent(TELEGRAM_USER_ID)}`, { method: "GET", retries: 4 });
     if (res.registered) {
       empName = res.name;
       $("emp-name").textContent = res.name;
@@ -1269,9 +1280,17 @@ async function boot() {
       showScreen("register");
     }
   } catch (e) {
-    // Show register screen with error hint
+    // Show register screen with error hint + ปุ่มลองใหม่แบบไม่ต้องปิดแอปทั้งหมด
     showScreen("register");
-    $("reg-hint").textContent = "⚠️ เชื่อมต่อ server ไม่สำเร็จ — กรุณาลองใหม่";
+    $("reg-hint").innerHTML = '⚠️ เชื่อมต่อ server ไม่สำเร็จ — <a href="#" id="retry-boot-link" style="color:var(--primary);text-decoration:underline;">ลองอีกครั้ง</a>';
+    const retryLink = $("retry-boot-link");
+    if (retryLink) {
+      retryLink.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        $("reg-hint").textContent = "กำลังลองเชื่อมต่อใหม่…";
+        boot(true);
+      });
+    }
   }
 }
 
